@@ -47,6 +47,11 @@ func (ms memberSet) Search(name string) int {
 }
 
 func (ms *memberSet) Add(m member) {
+	// Member's type can be empty, when it duplicates type of its parent;
+	// ignore it as recursive types are not supported.
+	if m.Typ == "" {
+		return
+	}
 	switch i := ms.Search(m.Name); {
 	case i == len(*ms):
 		*ms = append(*ms, m)
@@ -81,6 +86,11 @@ func (os *objectSet) Add(o object) {
 		*os = append(*os, o)
 	case (*os)[i].Name == o.Name:
 		for _, m := range o.Members {
+			// Ignore members which are named after structs to not create
+			// invalid recursive types.
+			if o.Name == m.Name && m.Name == m.Typ {
+				continue
+			}
 			(*memberSet)(&(*os)[i].Members).Add(m)
 		}
 	default:
@@ -369,6 +379,11 @@ func linearObjects(tree map[string]interface{}) (obj []object) {
 		nd, stack = stack[n-1], stack[:n-1]
 		o := object{Name: nd.name, Members: make([]member, 0, len(nd.nodes))}
 		for k, v := range nd.nodes {
+			// Ignore "_links" member as it's redundant and it pollutes a number
+			// of structs with a "href" member.
+			if k == "_links" {
+				continue
+			}
 			m := member{Name: camelCase(k), Tag: k}
 			setType(&m, v, nd.name, &stack)
 			(*memberSet)(&o.Members).Add(m)
