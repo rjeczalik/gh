@@ -63,9 +63,9 @@ func (ms *memberSet) Add(m member) {
 		if typ := (*ms)[i].Typ; typ != m.Typ {
 			// The "created_at" and "pushed_at" keys storing timestamps instead
 			// of RFC3339 time for PushEvent looks like a bug. Force use of
-			// time.Time type.
+			// the Time type.
 			if m.Name == "CreatedAt" || m.Name == "PushedAt" {
-				(*ms)[i].Typ = "time.Time"
+				(*ms)[i].Typ = "Time"
 				break
 			}
 			(*ms)[i].Typ = "interface{}"
@@ -108,10 +108,7 @@ const header = `// Created by go generate; DO NOT EDIT
 
 package webhook
 
-import (
-	"reflect"
-	"time"
-)
+import "reflect"
 
 var payloadTypes = map[string]reflect.Type{
 {{range $_, $event := .}}	"{{snakeCase $event.Name}}": reflect.TypeOf((*{{$event.Name}})(nil)).Elem(),
@@ -140,8 +137,8 @@ var hardcodedTypes = map[string]string{
 	"user":        "User",
 	"position":    "int",
 	"line":        "int",
-	"closed_at":   "time.Time",
-	"merged_at":   "time.Time",
+	"closed_at":   "Time",
+	"merged_at":   "Time",
 	"body":        "string",
 	"path":        "string",
 	"homepage":    "string",
@@ -349,11 +346,11 @@ var setType = func() func(*member, interface{}, string, *[]node) {
 				}
 				prev = cur
 			}
-			m.Typ = cur.Typ
+			m.Typ = "[]" + cur.Typ
 		case string:
 			switch err := (&time.Time{}).UnmarshalText([]byte(v)); err {
 			case nil:
-				m.Typ = "time.Time"
+				m.Typ = "Time"
 			default:
 				m.Typ = "string"
 			}
