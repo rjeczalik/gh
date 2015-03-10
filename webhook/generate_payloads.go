@@ -44,6 +44,13 @@ type object struct {
 	Members []member
 }
 
+type rawEventSlice []rawEvent
+
+func (p rawEventSlice) Len() int           { return len(p) }
+func (p rawEventSlice) Less(i, j int) bool { return p[i].Name < p[j].Name }
+func (p rawEventSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+func (p rawEventSlice) Sort()              { sort.Sort(p) }
+
 type memberSet []member
 
 func (ms memberSet) Search(name string) int {
@@ -262,7 +269,10 @@ func scrapPayload(s *goquery.Selection, n int) string {
 	if !ok {
 		die("unable to find URL for scrapping")
 	}
-	url = "https://developer.github.com" + url
+	return scrapPayloadURL("https://developer.github.com"+url, n)
+}
+
+func scrapPayloadURL(url string, n int) string {
 	res, err := http.Get(url)
 	if err != nil {
 		die(err)
@@ -302,6 +312,15 @@ func externalJSON(event *rawEvent, s *goquery.Selection) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func pingEvent() rawEvent {
+	const raw = `{"zen":"Random string of GitHub zen","hook_id":0,"hook":%s}`
+	var hook = scrapPayloadURL("https://developer.github.com/v3/repos/hooks/", 1)
+	return rawEvent{
+		Name:        "PingEvent",
+		PayloadJSON: fmt.Sprintf(raw, hook),
 	}
 }
 
@@ -410,8 +429,8 @@ func main() {
 	if err != nil {
 		die(err)
 	}
-	var events []rawEvent
-	var n int
+	var events = []rawEvent{pingEvent()}
+	var n = len(events)
 	doc.Find(`div[class='content'] > h2[id$='event'],h3[id^='payload']+table,table+pre`).Each(
 		func(i int, s *goquery.Selection) {
 			switch {
@@ -432,6 +451,7 @@ func main() {
 				}
 			}
 		})
+	rawEventSlice(events).Sort()
 	for i := range events {
 		switch {
 		case !strings.HasSuffix(events[i].Name, "Event"):
