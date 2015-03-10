@@ -40,19 +40,55 @@ type object struct {
 	Members []member
 }
 
-type memberSlice []member
+type memberSet []member
 
-func (m memberSlice) Len() int           { return len(m) }
-func (m memberSlice) Less(i, j int) bool { return m[i].Name < m[j].Name }
-func (m memberSlice) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
-func (m memberSlice) Sort()              { sort.Sort(m) }
+func (ms memberSet) Search(name string) int {
+	return sort.Search(len(ms), func(i int) bool { return ms[i].Name >= name })
+}
 
-type objectSlice []object
+func (ms *memberSet) Add(m member) {
+	switch i := ms.Search(m.Name); {
+	case i == len(*ms):
+		*ms = append(*ms, m)
+	case (*ms)[i].Name == m.Name:
+		if typ := (*ms)[i].Typ; typ != m.Typ {
+			// The "created_at" and "pushed_at" keys storing timestamps instead
+			// of RFC3339 time for PushEvent looks like a bug. Force use of
+			// time.Time type.
+			if m.Name == "CreatedAt" || m.Name == "PushedAt" {
+				(*ms)[i].Typ = "time.Time"
+				break
+			}
+			(*ms)[i].Typ = "interface{}"
+			fmt.Fprintf(os.Stderr, "different types for %s member: %s and %s, using interface{}\n", m.Name, typ, m.Typ)
+		}
+	default:
+		*ms = append(*ms, member{})
+		copy((*ms)[i+1:], (*ms)[i:])
+		(*ms)[i] = m
+	}
+}
 
-func (o objectSlice) Len() int           { return len(o) }
-func (o objectSlice) Less(i, j int) bool { return o[i].Name < o[j].Name }
-func (o objectSlice) Swap(i, j int)      { o[i], o[j] = o[j], o[i] }
-func (o objectSlice) Sort()              { sort.Sort(o) }
+type objectSet []object
+
+func (os objectSet) Search(name string) int {
+	return sort.Search(len(os), func(i int) bool { return os[i].Name >= name })
+}
+
+func (os *objectSet) Add(o object) {
+	switch i := os.Search(o.Name); {
+	case i == len(*os):
+		*os = append(*os, o)
+	case (*os)[i].Name == o.Name:
+		for _, m := range o.Members {
+			(*memberSet)(&(*os)[i].Members).Add(m)
+		}
+	default:
+		*os = append(*os, object{})
+		copy((*os)[i+1:], (*os)[i:])
+		(*os)[i] = o
+	}
+}
 
 const header = `// Created by go generate; DO NOT EDIT
 
@@ -152,6 +188,8 @@ var hardcodedFileType = object{
 	},
 }
 
+var idiomaticReplacer = strings.NewReplacer("Url", "URL", "Id", "ID", "Html", "HTML", "Sha", "SHA")
+
 func nonil(err ...error) error {
 	for _, err := range err {
 		if err != nil {
@@ -204,13 +242,7 @@ func camelCase(s string) (t string) {
 			}
 		}
 	}
-	return t
-}
-
-var idiomaticReplacer = strings.NewReplacer("Url", "URL", "Id", "ID", "Html", "HTML", "Sha", "SHA")
-
-func idiomatic(s string) string {
-	return idiomaticReplacer.Replace(s)
+	return idiomaticReplacer.Replace(t)
 }
 
 func scrapPayload(s *goquery.Selection, n int) string {
@@ -333,23 +365,16 @@ func linearObjects(tree map[string]interface{}) (obj []object) {
 	}
 	obj = append(obj, hardcodedFileType)
 	var nd node
-	var visited = map[string]struct{}{"Files": {}}
 	for n := len(stack); n != 0; n = len(stack) {
 		nd, stack = stack[n-1], stack[:n-1]
-		if _, ok := visited[nd.name]; ok {
-			continue
-		}
 		o := object{Name: nd.name, Members: make([]member, 0, len(nd.nodes))}
 		for k, v := range nd.nodes {
-			m := member{Name: idiomatic(camelCase(k)), Tag: k}
+			m := member{Name: camelCase(k), Tag: k}
 			setType(&m, v, nd.name, &stack)
-			o.Members = append(o.Members, m)
+			(*memberSet)(&o.Members).Add(m)
 		}
-		memberSlice(o.Members).Sort()
-		obj = append(obj, o)
-		visited[nd.name] = struct{}{}
+		(*objectSet)(&obj).Add(o)
 	}
-	objectSlice(obj).Sort()
 	return obj
 }
 
