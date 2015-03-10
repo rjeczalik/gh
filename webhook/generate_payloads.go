@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -22,7 +23,10 @@ import (
 
 const docURL = "https://developer.github.com/v3/activity/events/types"
 
-var output string
+var (
+	output   string
+	testdata string
+)
 
 type rawEvent struct {
 	Name        string
@@ -127,16 +131,7 @@ type {{$o.Name}} struct {
 type Files map[string]File
 `
 
-var funcs = map[string]interface{}{
-	"snakeCase": func(s string) string {
-		if i := strings.Index(s, "Event"); i != -1 {
-			s = s[:i]
-		}
-		return snakeCase(s)
-	},
-}
-
-var tmplHeader = template.Must(template.New("payloads").Funcs(funcs).Parse(header))
+var tmplHeader = template.Must(template.New("payloads").Funcs(map[string]interface{}{"snakeCase": snakeCase}).Parse(header))
 var tmplTypes = template.Must(template.New("payloads").Parse(types))
 
 // Those keys that are assigned to null in example JSON payloads lack type
@@ -215,7 +210,8 @@ func die(v interface{}) {
 }
 
 func init() {
-	flag.StringVar(&output, "o", "payloads.go", "")
+	flag.StringVar(&output, "o", "payloads.go", "Output generated Go structs to this file.")
+	dump := flag.Bool("t", false, "Write all intermediate JSON files for testing.")
 	flag.Parse()
 	if !filepath.IsAbs(output) {
 		s, err := filepath.Abs(output)
@@ -224,9 +220,18 @@ func init() {
 		}
 		output = s
 	}
+	if *dump {
+		testdata = filepath.Join(filepath.Dir(output), "testdata")
+		if err := os.MkdirAll(testdata, 0755); err != nil {
+			die(err)
+		}
+	}
 }
 
 func snakeCase(s string) (t string) {
+	if i := strings.Index(s, "Event"); i != -1 {
+		s = s[:i]
+	}
 	for _, c := range s {
 		if unicode.IsUpper(c) {
 			t = t + "_" + string(unicode.ToLower(c))
@@ -459,5 +464,17 @@ func main() {
 	// os.Rename fails under Windows when target file exists.
 	if err := nonil(os.RemoveAll(output), os.Rename(f.Name(), output)); err != nil {
 		die(err)
+	}
+	if testdata != "" {
+		for _, event := range events {
+			f, err := os.OpenFile(filepath.Join(testdata, snakeCase(event.Name)+".json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+			if err != nil {
+				die(err)
+			}
+			_, err = io.Copy(f, strings.NewReader(event.PayloadJSON))
+			if err = nonil(err, f.Sync(), f.Close()); err != nil {
+				die(err)
+			}
+		}
 	}
 }
