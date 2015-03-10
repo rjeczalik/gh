@@ -102,7 +102,7 @@ func (os *objectSet) Add(o object) {
 
 const header = `// Created by go generate; DO NOT EDIT
 
-package ghops
+package webhook
 
 import (
 	"reflect"

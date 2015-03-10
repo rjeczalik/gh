@@ -1,6 +1,6 @@
 // Created by go generate; DO NOT EDIT
 
-package ghops
+package webhook
 
 import (
 	"reflect"
