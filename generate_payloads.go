@@ -58,7 +58,10 @@ const header = `// Created by go generate; DO NOT EDIT
 
 package ghops
 
-import "time"
+import (
+	"reflect"
+	"time"
+)
 
 var payloadTypes = map[string]reflect.Type{
 {{range $_, $event := .}}	"{{snakeCase $event.Name}}": reflect.TypeOf((*{{$event.Name}})(nil)).Elem(),
@@ -263,11 +266,16 @@ type node struct {
 	nodes map[string]interface{}
 }
 
-var setType = func() func(*member, interface{}, *[]node) {
-	var setType func(*member, interface{}, *[]node)
-	setType = func(m *member, v interface{}, stack *[]node) {
+var setType = func() func(*member, interface{}, string, *[]node) {
+	var setType func(*member, interface{}, string, *[]node)
+	setType = func(m *member, v interface{}, parent string, stack *[]node) {
 		switch v := v.(type) {
 		case map[string]interface{}:
+			if parent == m.Name {
+				// Ignore members which are named after structs to not create
+				// invalid recursive types.
+				break
+			}
 			m.Typ = m.Name
 			// Files is a member of a gist object, it's handled separately since
 			// it's a map.
@@ -281,10 +289,14 @@ var setType = func() func(*member, interface{}, *[]node) {
 		case float64:
 			m.Typ = "int"
 		case []interface{}:
+			if len(v) == 0 {
+				m.Typ = "[]string"
+				break
+			}
 			var prev = *m
 			var cur = *m
 			for _, v := range v {
-				setType(&cur, v, stack)
+				setType(&cur, v, "", stack)
 				if prev.Typ != "" && cur.Typ != prev.Typ {
 					die(fmt.Sprintf("heterogeneous arrays not supported: %s, %s", prev.Typ, cur.Typ))
 				}
@@ -330,7 +342,7 @@ func linearObjects(tree map[string]interface{}) (obj []object) {
 		o := object{Name: nd.name, Members: make([]member, 0, len(nd.nodes))}
 		for k, v := range nd.nodes {
 			m := member{Name: idiomatic(camelCase(k)), Tag: k}
-			setType(&m, v, &stack)
+			setType(&m, v, nd.name, &stack)
 			o.Members = append(o.Members, m)
 		}
 		memberSlice(o.Members).Sort()
