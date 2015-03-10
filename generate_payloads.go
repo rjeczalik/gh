@@ -58,6 +58,8 @@ const header = `// Created by go generate; DO NOT EDIT
 
 package ghops
 
+import "time"
+
 var payloadTypes = map[string]reflect.Type{
 {{range $_, $event := .}}	"{{snakeCase $event.Name}}": reflect.TypeOf((*{{$event.Name}})(nil)).Elem(),
 {{end}}
