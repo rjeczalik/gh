@@ -117,7 +117,7 @@ package webhook
 
 import "reflect"
 
-var payloadTypes = map[string]reflect.Type{
+var payloads = payloadsMap{
 {{range $_, $event := .}}	"{{snakeCase $event.Name}}": reflect.TypeOf((*{{$event.Name}})(nil)).Elem(),
 {{end}}
 }
@@ -197,7 +197,7 @@ var hardcodedFileType = object{
 	},
 }
 
-var idiomaticReplacer = strings.NewReplacer("Url", "URL", "Id", "ID", "Html", "HTML", "Sha", "SHA")
+var idiomaticReplacer = strings.NewReplacer("Url", "URL", "Id", "ID", "Html", "HTML", "Sha", "SHA", "Ssh", "SSH")
 
 func nonil(err ...error) error {
 	for _, err := range err {

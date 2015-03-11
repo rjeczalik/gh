@@ -9,7 +9,7 @@ import (
 )
 
 func TestPayloads(t *testing.T) {
-	for name, typ := range payloadTypes {
+	for name, typ := range payloads {
 		path := filepath.Join("testdata", name+".json")
 		f, err := os.Open(path)
 		if err != nil {

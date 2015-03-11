@@ -4,7 +4,7 @@ package webhook
 
 import "reflect"
 
-var payloadTypes = map[string]reflect.Type{
+var payloads = payloadsMap{
 	"commit_comment":              reflect.TypeOf((*CommitCommentEvent)(nil)).Elem(),
 	"create":                      reflect.TypeOf((*CreateEvent)(nil)).Elem(),
 	"delete":                      reflect.TypeOf((*DeleteEvent)(nil)).Elem(),
@@ -425,8 +425,8 @@ type Forkee struct {
 	PullsURL         string `json:"pulls_url"`
 	PushedAt         Time   `json:"pushed_at"`
 	ReleasesURL      string `json:"releases_url"`
+	SSHURL           string `json:"ssh_url"`
 	Size             int    `json:"size"`
-	SshURL           string `json:"ssh_url"`
 	StargazersCount  int    `json:"stargazers_count"`
 	StargazersURL    string `json:"stargazers_url"`
 	StatusesURL      string `json:"statuses_url"`
@@ -901,8 +901,8 @@ type Repo struct {
 	PullsURL         string `json:"pulls_url"`
 	PushedAt         Time   `json:"pushed_at"`
 	ReleasesURL      string `json:"releases_url"`
+	SSHURL           string `json:"ssh_url"`
 	Size             int    `json:"size"`
-	SshURL           string `json:"ssh_url"`
 	StargazersCount  int    `json:"stargazers_count"`
 	StargazersURL    string `json:"stargazers_url"`
 	StatusesURL      string `json:"statuses_url"`
@@ -974,8 +974,8 @@ type Repository struct {
 	PullsURL         string `json:"pulls_url"`
 	PushedAt         Time   `json:"pushed_at"`
 	ReleasesURL      string `json:"releases_url"`
+	SSHURL           string `json:"ssh_url"`
 	Size             int    `json:"size"`
-	SshURL           string `json:"ssh_url"`
 	Stargazers       int    `json:"stargazers"`
 	StargazersCount  int    `json:"stargazers_count"`
 	StargazersURL    string `json:"stargazers_url"`
