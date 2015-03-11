@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -70,7 +70,7 @@ LoopMethods:
 func hmacHexDigest(secret string, p []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(p)
-	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 type Handler struct {
