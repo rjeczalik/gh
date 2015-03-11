@@ -3,7 +3,7 @@ package webhook
 import (
 	"os"
 	"testing"
-	"tmpl"
+	"text/template"
 	"unicode"
 )
 

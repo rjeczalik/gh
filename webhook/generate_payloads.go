@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"text/template"
 	"time"
-	"tmpl"
 	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
