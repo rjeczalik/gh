@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -18,6 +19,52 @@ var errMethod = errors.New("invalid HTTP method")
 var errHeaders = errors.New("invalid HTTP headers")
 var errSig = errors.New("invalid signature header")
 var errPayload = errors.New("unsupported payload type")
+
+var empty = reflect.TypeOf(func(interface{}) {}).In(0)
+
+// payloadMethods loosly bases around suitableMethods from $GOROOT/src/net/rpc/server.go.
+func payloadMethods(typ reflect.Type) map[string]reflect.Method {
+	methods := make(map[string]reflect.Method)
+LoopMethods:
+	for i := 0; i < typ.NumMethod(); i++ {
+		method := typ.Method(i)
+		mtype := method.Type
+		mname := method.Name
+		if method.PkgPath != "" {
+			continue LoopMethods
+		}
+		switch mtype.NumIn() {
+		case 2:
+			eventType := mtype.In(1)
+			if eventType.Kind() != reflect.Ptr {
+				log.Println("method", mname, "takes wrong type of event:", eventType)
+				continue LoopMethods
+			}
+			event, ok := payloads.Name(eventType.Elem())
+			if !ok {
+				log.Println("method", mname, "takes wrong type of event:", eventType)
+				continue LoopMethods
+			}
+			if _, ok = methods[event]; ok {
+				panic(fmt.Sprintf("there is more than one method handling %v event", eventType))
+			}
+			methods[event] = method
+		case 3:
+			if mtype.In(1).Kind() != reflect.String || mtype.In(2) != empty {
+				log.Println("wildcard method", mname, "takes wrong types of arguments")
+				continue LoopMethods
+			}
+			if _, ok := methods["*"]; ok {
+				panic("there is more than one method handling all events")
+			}
+			methods["*"] = method
+		default:
+			log.Println("method", mname, "takes wrong number of arguments:", mtype.NumIn())
+			continue LoopMethods
+		}
+	}
+	return methods
+}
 
 type Handler struct {
 	// ErrorLog specifies an optional logger for errors serving requests.
@@ -33,12 +80,11 @@ func New(secret string, rcvr interface{}) *Handler {
 	if secret == "" {
 		panic("webhook: called New with empty secret")
 	}
-	h := &Handler{
+	return &Handler{
 		secret: []byte(secret),
 		rcvr:   reflect.ValueOf(rcvr),
-		method: make(map[string]reflect.Method),
+		method: payloadMethods(reflect.TypeOf(rcvr)),
 	}
-	return h
 }
 
 // ServeHTTP implements the http.Handler interface.
