@@ -1,6 +1,11 @@
 package webhook
 
 import (
+	"bytes"
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
@@ -56,4 +61,51 @@ func TestPayloadMethods(t *testing.T) {
 			t.Errorf("want events=%v; got %v (i=%d)", cas.events, events, i)
 		}
 	}
+}
+
+func testHandler(t *testing.T, rcrv interface{}) {
+	const secret = "dupa.8"
+	ts := httptest.NewServer(New(secret, rcrv))
+	defer ts.Close()
+
+	for event := range payloads {
+		body, err := ioutil.ReadFile(filepath.Join("testdata", event+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, err := http.NewRequest("POST", ts.URL, bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("X-GitHub-Event", event)
+		req.Header.Set("X-Hub-Signature", hmacHexDigest(secret, body))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Errorf("Do(req)=%v (event=%s)", err, event)
+		}
+		if resp.StatusCode != 200 {
+			t.Errorf("want StatusCode=200; got %d (event=%s)", resp.StatusCode, event)
+		}
+	}
+}
+
+func TestHandlerWithDetail(t *testing.T) {
+	h := DetailHandler{}
+	testHandler(t, h)
+	for event := range payloads {
+		if h[event] != 1 {
+			t.Errorf("want h[%s]=1; got %d", event, h[event])
+		}
+	}
+}
+
+func TestHandlerWithBlanket(t *testing.T) {
+	h := BlanketHandler{}
+	testHandler(t, h)
+	for event := range payloads {
+		if h[event] != 1 {
+			t.Errorf("want h[%s]=1; got %d", event, h[event])
+		}
+	}
+
 }

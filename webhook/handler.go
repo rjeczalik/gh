@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +14,7 @@ import (
 	"reflect"
 )
 
-const maxPayloadLen = 1024 * 1024 * 1024 // 1MiB
+const maxPayloadLen = 1024 * 1024 // 1MiB
 
 var errMethod = errors.New("invalid HTTP method")
 var errHeaders = errors.New("invalid HTTP headers")
@@ -66,12 +67,18 @@ LoopMethods:
 	return methods
 }
 
+func hmacHexDigest(secret string, p []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(p)
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+
 type Handler struct {
 	// ErrorLog specifies an optional logger for errors serving requests.
 	// If nil, logging goes to os.Stderr via the log package's standard logger.
 	ErrorLog *log.Logger
 
-	secret []byte                    // value for X-Hub-Signature
+	secret string                    // value for X-Hub-Signature
 	rcvr   reflect.Value             // receiver of methods for the service
 	method map[string]reflect.Method // event handling methods
 }
@@ -81,7 +88,7 @@ func New(secret string, rcvr interface{}) *Handler {
 		panic("webhook: called New with empty secret")
 	}
 	return &Handler{
-		secret: []byte(secret),
+		secret: secret,
 		rcvr:   reflect.ValueOf(rcvr),
 		method: payloadMethods(reflect.TypeOf(rcvr)),
 	}
@@ -102,15 +109,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		h.fatal(w, req, http.StatusBadRequest, errHeaders)
 		return
 	}
-	body := make([]byte, int(req.ContentLength))
-	_, err := req.Body.Read(body)
-	if err != nil && err != io.EOF {
+	body := bytes.NewBuffer(make([]byte, 0, int(req.ContentLength)))
+	if _, err := io.Copy(body, req.Body); err != nil {
 		h.fatal(w, req, http.StatusInternalServerError, err)
 		return
 	}
-	mac := hmac.New(sha256.New, h.secret)
-	mac.Write(body)
-	if !hmac.Equal(mac.Sum(nil), sig) {
+	if !hmac.Equal([]byte(hmacHexDigest(h.secret, body.Bytes())), sig) {
 		h.fatal(w, req, http.StatusUnauthorized, errSig)
 		return
 	}
@@ -120,7 +124,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	v := reflect.New(typ)
-	if err := json.NewDecoder(bytes.NewReader(body)).Decode(v.Interface()); err != nil {
+	if err := json.NewDecoder(body).Decode(v.Interface()); err != nil {
 		h.fatal(w, req, http.StatusBadRequest, err)
 		return
 	}
@@ -131,21 +135,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (h *Handler) call(remote, event string, payload interface{}) {
 	if method, ok := h.method[event]; ok {
 		method.Func.Call([]reflect.Value{h.rcvr, reflect.ValueOf(payload)})
-		h.logf("%s: Status=200 X-GitHub-Event=%q Type=%T", remote, event, payload)
+		h.logf("INFO %s: Status=200 X-GitHub-Event=%q Type=%T", remote, event, payload)
 		return
 	}
 	if all, ok := h.method["*"]; ok {
 		all.Func.Call([]reflect.Value{h.rcvr, reflect.ValueOf(event), reflect.ValueOf(payload)})
-		h.logf("%s: Status=200 X-GitHub-Event=%q Type=%T", remote, event, payload)
+		h.logf("INFO %s: Status=200 X-GitHub-Event=%q Type=%T", remote, event, payload)
 		return
 	}
 	if event == "ping" {
-		h.logf("%s: Status=200 X-GitHub-Event=ping Events=%v", remote, payload.(*PingEvent).Hook.Events)
+		h.logf("INFO %s: Status=200 X-GitHub-Event=ping Events=%v", remote, payload.(*PingEvent).Hook.Events)
 	}
 }
 
 func (h *Handler) fatal(w http.ResponseWriter, req *http.Request, code int, err error) {
-	h.logf("%s: Status=%d X-GitHub-Event=%q Content-Length=%d: %v", req.RemoteAddr,
+	h.logf("ERROR %s: Status=%d X-GitHub-Event=%q Content-Length=%d: %v", req.RemoteAddr,
 		code, req.Header.Get("X-GitHub-Event"), req.ContentLength, err)
 	http.Error(w, http.StatusText(code), code)
 }
