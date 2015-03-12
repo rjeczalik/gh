@@ -15,12 +15,15 @@ type Foo struct{}
 
 func (Foo) All(string, interface{}) {}
 func (Foo) Ping(*PingEvent)         {}
+func (Foo) Err() error              { return nil }
 
 type Bar struct{}
 
 func (Bar) Create(*CreateEvent) {}
 func (Bar) Gist(*GistEvent)     {}
 func (Bar) Push(*PushEvent)     {}
+func (Bar) push(*PushEvent)     {}
+func (Bar) Other()              {}
 
 type Baz struct{}
 
@@ -28,6 +31,8 @@ func (Baz) All(string, interface{})   {}
 func (Baz) Delete(*DeleteEvent)       {}
 func (Baz) ForkApply(*ForkApplyEvent) {}
 func (Baz) Gollum(*GollumEvent)       {}
+func (Baz) gollum(*GollumEvent)       {}
+func (Baz) Add(int, int) int          { return 0 }
 
 func TestPayloadMethods(t *testing.T) {
 	cases := [...]struct {
