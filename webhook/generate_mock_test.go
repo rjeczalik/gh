@@ -40,22 +40,22 @@ package webhook
 
 type DetailHandler map[string]int
 {{range $event, $_ := .}}
-func (dh DetailHandler) {{camelCase $event}}(*{{camelCase $event}}Event) { dh["{{$event}}"]++ }
+func (dh DetailHandler) {{camelCase $event}}(*{{camelCase $event}}Event) {
+	dh["{{$event}}"]++
+}
 {{end}}
-
 type BlanketHandler map[string]int
 
-func (bh BlanketHandler) All(event string, _ interface{}) { bh[event]++ }
+func (bh BlanketHandler) All(event string, _ interface{}) {
+	bh[event]++
+}
 `
 
 var tmplMock = template.Must(template.New("mock_test").Funcs(fn).Parse(mock))
 
 func TestGenerateMockHelper(t *testing.T) {
 	var output string
-	for args := os.Args[1:]; len(args) != 0; args = args[1:] {
-		if len(args) < 3 {
-			break
-		}
+	for args := os.Args[1:]; len(args) > 2; args = args[1:] {
 		if args[0] == "--" && args[1] == "-generate" {
 			output = args[2]
 			break
