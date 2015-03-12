@@ -24,7 +24,6 @@ var (
 	key    = flag.String("key", "", "Private key file.")
 	addr   = flag.String("addr", "", "Network address to listen on. Default is :8080 for HTTP and :8443 for HTTPS.")
 	secret = flag.String("secret", "", "GitHub secret value used for signing payloads.")
-	script string
 )
 
 type Event struct {
@@ -42,12 +41,13 @@ func (h handler) All(event string, payload interface{}) {
 		log.Println("ERROR template error:", err)
 		return
 	}
-	cmd, args := splitCommand(buf.String())
+	command := strings.TrimSpace(buf.String())
+	cmd, args := splitCommand(command)
 	if err := exec.Command(cmd, args...).Run(); err != nil {
-		log.Printf("ERROR exec %q error: %v", buf.String(), err)
+		log.Printf("ERROR exec %q error: %v", command, err)
 		return
 	}
-	log.Printf("INFO exec %q for event %q", buf.String(), event)
+	log.Printf("INFO exec %q for event %q", command, event)
 }
 
 func splitCommand(command string) (string, []string) {
@@ -111,13 +111,17 @@ func main() {
 		fmt.Fprintln(os.Stderr, usage)
 	}
 	flag.Parse()
-	if flag.NArg() != 1 {
+	if flag.NArg() != 1 || flag.Arg(0) == "" {
 		die("invalid number of arguments")
 	}
 	if (*cert == "") != (*key == "") {
 		die("both -cert and -key flags must be provided")
 	}
-	script = flag.Arg(0)
+	tmpl, err := template.ParseFiles(flag.Arg(0))
+	if err != nil {
+		die(err)
+	}
+	var handler = handler{tmpl: tmpl}
 	var listener net.Listener
 	if *cert != "" {
 		crt, err := tls.LoadX509KeyPair(*cert, *key)
@@ -152,7 +156,8 @@ func main() {
 		}
 		listener = l
 	}
-	if err := http.Serve(listener, webhook.New(*secret, handler{})); err != nil {
+	log.Printf("INFO Listening on %s . . .", listener.Addr())
+	if err := http.Serve(listener, webhook.New(*secret, handler)); err != nil {
 		die(err)
 	}
 }
