@@ -26,6 +26,7 @@ const docURL = "https://developer.github.com/v3/activity/events/types"
 var (
 	output   string
 	testdata string
+	offline  bool
 )
 
 type rawEvent struct {
@@ -50,6 +51,11 @@ func (p rawEventSlice) Len() int           { return len(p) }
 func (p rawEventSlice) Less(i, j int) bool { return p[i].Name < p[j].Name }
 func (p rawEventSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 func (p rawEventSlice) Sort()              { sort.Sort(p) }
+
+func (p rawEventSlice) Contains(event string) bool {
+	i := sort.Search(len(p), func(i int) bool { return p[i].Name >= event })
+	return i != len(p) && p[i].Name == event
+}
 
 type memberSet []member
 
@@ -215,6 +221,7 @@ func die(v interface{}) {
 
 func init() {
 	flag.StringVar(&output, "o", "payloads.go", "Output generated Go structs to this file.")
+	flag.BoolVar(&offline, "offline", false, "Uses JSON files in testdata/ directory instead of processing on-line GitHub docs.")
 	dump := flag.Bool("t", false, "Write all intermediate JSON files for testing.")
 	flag.Parse()
 	if !filepath.IsAbs(output) {
@@ -429,28 +436,52 @@ func main() {
 	if err != nil {
 		die(err)
 	}
-	var events = []rawEvent{pingEvent()}
-	var n = len(events)
-	doc.Find(`div[class='content'] > h2[id$='event'],h3[id^='payload']+table,table+pre`).Each(
-		func(i int, s *goquery.Selection) {
-			switch {
-			case n == len(events):
-				events = append(events, rawEvent{Name: s.Text()})
-			case externalJSON(&events[n], s):
-				n++
-			default:
-				s.Find(`pre > code[class^='language']`).Each(
-					func(_ int, s *goquery.Selection) {
-						if events[n].PayloadJSON != "" {
-							die(fmt.Sprintf("duplicate JSON payload for %q event (i=%d)", events[n].Name, i))
-						}
-						events[n].PayloadJSON = s.Text()
-					})
-				if events[n].PayloadJSON != "" {
-					n++
-				}
+	var events []rawEvent
+	if offline {
+		fis, err := ioutil.ReadDir("testdata")
+		if err != nil {
+			die(err)
+		}
+		for _, fi := range fis {
+			event := strings.ToLower(fi.Name())
+			if !strings.HasSuffix(event, ".json") {
+				fmt.Fprintln(os.Stderr, "webhook: ignoring", fi.Name())
+				continue
 			}
-		})
+			event = camelCase(event[:len(event)-len(".json")]) + "Event"
+			if (*rawEventSlice)(&events).Contains(event) {
+				die(fmt.Sprintf("duplicate JSON files for %q event", event))
+			}
+			body, err := ioutil.ReadFile(filepath.Join("testdata", fi.Name()))
+			if err != nil {
+				die(err)
+			}
+			events = append(events, rawEvent{Name: event, PayloadJSON: string(body)})
+		}
+	} else {
+		events = append(events, pingEvent())
+		var n = len(events)
+		doc.Find(`div[class='content'] > h2[id$='event'],h3[id^='payload']+table,table+pre`).Each(
+			func(i int, s *goquery.Selection) {
+				switch {
+				case n == len(events):
+					events = append(events, rawEvent{Name: s.Text()})
+				case externalJSON(&events[n], s):
+					n++
+				default:
+					s.Find(`pre > code[class^='language']`).Each(
+						func(_ int, s *goquery.Selection) {
+							if events[n].PayloadJSON != "" {
+								die(fmt.Sprintf("duplicate JSON payload for %q event (i=%d)", events[n].Name, i))
+							}
+							events[n].PayloadJSON = s.Text()
+						})
+					if events[n].PayloadJSON != "" {
+						n++
+					}
+				}
+			})
+	}
 	rawEventSlice(events).Sort()
 	for i := range events {
 		switch {
@@ -482,7 +513,7 @@ func main() {
 	if err := nonil(os.RemoveAll(output), os.Rename(f.Name(), output)); err != nil {
 		die(err)
 	}
-	if testdata != "" {
+	if testdata != "" && !offline {
 		for _, event := range events {
 			f, err := os.OpenFile(filepath.Join(testdata, snakeCase(event.Name)+".json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 			if err != nil {
