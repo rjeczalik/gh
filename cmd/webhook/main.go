@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/tls"
 	"flag"
@@ -34,7 +35,7 @@ type Event struct {
 var scriptFuncs = template.FuncMap{
 	"exec": func(cmd string, args ...string) (string, error) {
 		out, err := exec.Command(cmd, args...).Output()
-		return string(out), err
+		return string(bytes.TrimSpace(out)), err
 	},
 	"log": func(v ...interface{}) string {
 		log.Println(v...)
