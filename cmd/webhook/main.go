@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"text/template"
 
 	"github.com/rjeczalik/gh/webhook"
@@ -54,7 +55,7 @@ type handler struct {
 }
 
 func newHandler(file string) (handler, error) {
-	tmpl := template.New("webhook").Funcs(scriptFuncs)
+	tmpl := template.New(filepath.Base(file)).Funcs(scriptFuncs)
 	tmpl, err := tmpl.ParseFiles(flag.Arg(0))
 	if err != nil {
 		return handler{}, err
