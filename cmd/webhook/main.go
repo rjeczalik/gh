@@ -1,17 +1,16 @@
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
-	"strings"
 	"text/template"
 
 	"github.com/rjeczalik/gh/webhook"
@@ -31,65 +30,41 @@ type Event struct {
 	Payload interface{} // https://developer.github.com/v3/activity/events/types/
 }
 
+var scriptFuncs = template.FuncMap{
+	"exec": func(cmd string, args ...string) (string, error) {
+		out, err := exec.Command(cmd, args...).Output()
+		return string(out), err
+	},
+	"log": func(v ...interface{}) {
+		log.Println(v...)
+	},
+	"logf": func(format string, v ...interface{}) {
+		if len(v) == 0 {
+			log.Print("%s", format)
+		} else {
+			log.Printf(format, v...)
+		}
+	},
+}
+
 type handler struct {
 	tmpl *template.Template
 }
 
+func newHandler(file string) (handler, error) {
+	tmpl := template.New("webhook").Funcs(scriptFuncs)
+	tmpl, err := tmpl.ParseFiles(flag.Arg(0))
+	if err != nil {
+		return handler{}, err
+	}
+	return handler{tmpl: tmpl}, nil
+}
+
 func (h handler) All(event string, payload interface{}) {
-	var buf bytes.Buffer
-	if err := h.tmpl.Execute(&buf, Event{Name: event, Payload: payload}); err != nil {
+	if err := h.tmpl.Execute(ioutil.Discard, Event{Name: event, Payload: payload}); err != nil {
 		log.Println("ERROR template error:", err)
 		return
 	}
-	command := strings.TrimSpace(buf.String())
-	cmd, args := splitCommand(command)
-	if err := exec.Command(cmd, args...).Run(); err != nil {
-		log.Printf("ERROR exec %q error: %v", command, err)
-		return
-	}
-	log.Printf("INFO exec %q for event %q", command, event)
-}
-
-func splitCommand(command string) (string, []string) {
-	var cmd string
-	var args []string
-	var i = -1
-	var quote rune
-	var push = func(n int) {
-		if i == -1 {
-			return
-		}
-		if offset := strings.IndexAny(string(command[n-1]), `"'`) ^ -1; cmd == "" {
-			cmd = command[i : n+offset]
-		} else {
-			args = append(args, command[i:n+offset])
-		}
-	}
-	for j, r := range command {
-		switch r {
-		case '"', '\'', '\\':
-			switch quote {
-			case 0:
-				quote = r
-			case '\\', r:
-				quote = 0
-			}
-		case ' ':
-			switch quote {
-			case 0:
-				push(j)
-				i = -1
-			case '\\':
-				quote = 0
-			}
-		default:
-			if i == -1 {
-				i = j
-			}
-		}
-	}
-	push(len(command))
-	return cmd, args
 }
 
 func nonil(s ...string) string {
@@ -117,11 +92,10 @@ func main() {
 	if (*cert == "") != (*key == "") {
 		die("both -cert and -key flags must be provided")
 	}
-	tmpl, err := template.ParseFiles(flag.Arg(0))
+	handler, err := newHandler(flag.Arg(0))
 	if err != nil {
 		die(err)
 	}
-	var handler = handler{tmpl: tmpl}
 	var listener net.Listener
 	if *cert != "" {
 		crt, err := tls.LoadX509KeyPair(*cert, *key)
