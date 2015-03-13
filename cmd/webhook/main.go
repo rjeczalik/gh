@@ -40,7 +40,7 @@ var scriptFuncs = template.FuncMap{
 	},
 	"logf": func(format string, v ...interface{}) {
 		if len(v) == 0 {
-			log.Print("%s", format)
+			log.Printf("%s", format)
 		} else {
 			log.Printf(format, v...)
 		}
