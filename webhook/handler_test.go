@@ -83,7 +83,7 @@ func testHandler(t *testing.T, rcrv interface{}) {
 			t.Fatal(err)
 		}
 		req.Header.Set("X-GitHub-Event", event)
-		req.Header.Set("X-Hub-Signature", hmacHexDigest(secret, body))
+		req.Header.Set("X-Hub-Signature", "sha1="+hmacHexDigest(secret, body))
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Errorf("Do(req)=%v (event=%s)", err, event)

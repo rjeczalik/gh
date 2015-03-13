@@ -3,7 +3,7 @@ package webhook
 import (
 	"bytes"
 	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,14 +12,18 @@ import (
 	"log"
 	"net/http"
 	"reflect"
+	"strings"
 )
 
 const maxPayloadLen = 1024 * 1024 // 1MiB
 
-var errMethod = errors.New("invalid HTTP method")
-var errHeaders = errors.New("invalid HTTP headers")
-var errSig = errors.New("invalid signature header")
-var errPayload = errors.New("unsupported payload type")
+var (
+	errMethod  = errors.New("invalid HTTP method")
+	errHeaders = errors.New("invalid HTTP headers")
+	errSig     = errors.New("invalid signature header")
+	errSigKind = errors.New("unsupported signature hash type")
+	errPayload = errors.New("unsupported payload type")
+)
 
 var empty = reflect.TypeOf(func(interface{}) {}).In(0)
 
@@ -68,7 +72,7 @@ LoopMethods:
 }
 
 func hmacHexDigest(secret string, p []byte) string {
-	mac := hmac.New(sha256.New, []byte(secret))
+	mac := hmac.New(sha1.New, []byte(secret))
 	mac.Write(p)
 	return hex.EncodeToString(mac.Sum(nil))
 }
@@ -97,16 +101,19 @@ func New(secret string, rcvr interface{}) *Handler {
 // ServeHTTP implements the http.Handler interface.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	event := req.Header.Get("X-GitHub-Event")
-	sig := []byte(req.Header.Get("X-Hub-Signature"))
+	sig := strings.Split(req.Header.Get("X-Hub-Signature"), "=")
 	switch {
 	case req.Method != "POST":
 		h.fatal(w, req, http.StatusMethodNotAllowed, errMethod)
 		return
-	case event == "" || len(sig) == 0:
-		h.fatal(w, req, http.StatusBadRequest, errHeaders)
-		return
 	case req.ContentLength <= 0 || req.ContentLength > maxPayloadLen:
 		h.fatal(w, req, http.StatusBadRequest, errHeaders)
+		return
+	case event == "" || len(sig) != 2:
+		h.fatal(w, req, http.StatusBadRequest, errHeaders)
+		return
+	case sig[0] != "sha1":
+		h.fatal(w, req, http.StatusBadRequest, errSigKind)
 		return
 	}
 	body := bytes.NewBuffer(make([]byte, 0, int(req.ContentLength)))
@@ -114,7 +121,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		h.fatal(w, req, http.StatusInternalServerError, err)
 		return
 	}
-	if !hmac.Equal([]byte(hmacHexDigest(h.secret, body.Bytes())), sig) {
+	if !hmac.Equal([]byte(hmacHexDigest(h.secret, body.Bytes())), []byte(sig[1])) {
 		h.fatal(w, req, http.StatusUnauthorized, errSig)
 		return
 	}
