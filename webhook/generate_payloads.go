@@ -149,6 +149,7 @@ var tmplTypes = template.Must(template.New("payloads").Parse(types))
 var hardcodedTypes = map[string]string{
 	"user":        "User",
 	"position":    "int",
+	"code":        "int",
 	"line":        "int",
 	"closed_at":   "Time",
 	"merged_at":   "Time",
