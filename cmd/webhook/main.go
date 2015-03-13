@@ -35,15 +35,17 @@ var scriptFuncs = template.FuncMap{
 		out, err := exec.Command(cmd, args...).Output()
 		return string(out), err
 	},
-	"log": func(v ...interface{}) {
+	"log": func(v ...interface{}) string {
 		log.Println(v...)
+		return ""
 	},
-	"logf": func(format string, v ...interface{}) {
+	"logf": func(format string, v ...interface{}) string {
 		if len(v) == 0 {
 			log.Printf("%s", format)
 		} else {
 			log.Printf(format, v...)
 		}
+		return ""
 	},
 }
 
