@@ -324,11 +324,13 @@ func externalJSON(event *rawEvent, s *goquery.Selection) bool {
 }
 
 func pingEvent() rawEvent {
-	const raw = `{"zen":"Random string of GitHub zen","hook_id":0,"hook":%s}`
-	var hook = scrapPayloadURL("https://developer.github.com/v3/repos/hooks/", 1)
+	body, err := ioutil.ReadFile(filepath.Join("testdata", "ping.json"))
+	if err != nil {
+		die(err)
+	}
 	return rawEvent{
 		Name:        "PingEvent",
-		PayloadJSON: fmt.Sprintf(raw, hook),
+		PayloadJSON: string(body),
 	}
 }
 
