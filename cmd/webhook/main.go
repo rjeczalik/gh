@@ -1,3 +1,63 @@
+// Command webhook starts a web server which listens on GitHub's POST requests.
+// The payload of each request is verified against its signature, unmarshalled
+// into corresponding event struct and the applied to the template script provided
+// by a user.
+//
+// Usage
+//
+//   webhook [-cert file -key file] [-addr address] -secret key script
+//
+//
+// The struct being passed to the template script is:
+//
+//   type Event struct {
+//   	Name    string
+//   	Payload interface{}
+//   }
+//
+// The Name field denotes underlying type for the Payload. Full mapping between
+// possible Name values and Payload types is listed in the documentation of
+// the webhook package.
+//
+// Template scripts use template syntax of text/template package. Each template
+// script has registered extra control functions:
+//
+//   log
+//   	An alias for log.Println. Used only for side-effect, returns empty string.
+//   logf
+//   	An alias for log.Printf. Used only for side-effect, returns empty string.
+//   exec
+//   	An alias for exec.Command. Returned value is the process' output read
+//   	from its os.Stdout.
+//
+// Example
+//
+// In order to log an e-mail of each person that pushed to your repository, create
+// a template script with the following content:
+//
+//   $ cat >push.tsc <EOF
+//   > {{if .Name eq "push"}}
+//   >   {{logf "%s pushed to %s" .Payload.Pusher.Email .Payload.Repository.Name}}
+//   > {{endif}}
+//   EOF
+//
+// And start the webhook:
+//
+//   $ webhook -secret secret123 push.tsc
+//   2015/03/13 21:32:15 INFO Listening on [::]:8080 . . .
+//
+// Webhook listens on 0.0.0.0:8080 by default.
+//
+// The -cert and -key flags are used to provide paths for certificate and private
+// key files. When specified, webhook serves HTTPS connection by default on 0.0.0.0:8443.
+//
+// The -addr flag can be used to specify a network address for the webhook to listen on.
+//
+// The -secret flag sets the secret value to verify the signature of GitHub's payloads.
+// The value is required and cannot be empty.
+//
+// The script argument is a path to the template script file which is used as a handler
+// for incoming events.
 package main
 
 import (
@@ -18,7 +78,62 @@ import (
 	"github.com/rjeczalik/gh/webhook"
 )
 
-const usage = `usage: webhook [-cert file -key file] [-addr address] -secret key script`
+const usage = `usage: webhook [-cert file -key file] [-addr address] -secret key script
+
+Starts a web server which listens on GitHub's POST requests. The payload of each
+request is verified against its signature, unmarshalled into corresponding event
+struct and the applied to the template script provided by a user.
+
+The struct being passed to the template script is:
+
+	type Event struct {
+		Name    string
+		Payload interface{}
+	}
+
+The Name field denotes underlying type for the Payload. Full mapping between
+possible Name values and Payload types is listed in the documentation of
+the webhook package.
+
+Template scripts use template syntax of text/template package. Each template
+script has registered extra control functions:
+
+	log
+		An alias for log.Println. Used only for side-effect, returns empty string.
+	logf
+		An alias for log.Printf. Used only for side-effect, returns empty string.
+	exec
+		An alias for exec.Command. Returned value is the process' output read
+		from its os.Stdout.
+
+Example
+
+In order to log an e-mail of each person that pushed to your repository, create
+a template script with the following content:
+
+	$ cat >push.tsc <EOF
+	> {{if .Name eq "push"}}
+	>   {{logf "%s pushed to %s" .Payload.Pusher.Email .Payload.Repository.Name}}
+	> {{endif}}
+	EOF
+
+And start the webhook:
+
+	$ webhook -secret secret123 push.tsc
+	2015/03/13 21:32:15 INFO Listening on [::]:8080 . . .
+
+Webhook listens on 0.0.0.0:8080 by default.
+
+The -cert and -key flags are used to provide paths for certificate and private
+key files. When specified, webhook serves HTTPS connection by default on 0.0.0.0:8443.
+
+The -addr flag can be used to specify a network address for the webhook to listen on.
+
+The -secret flag sets the secret value to verify the signature of GitHub's payloads.
+The value is required and cannot be empty.
+
+The script argument is a path to the template script file which is used as a handler
+for incoming events.`
 
 var (
 	cert   = flag.String("cert", "", "Certificate file.")
@@ -86,6 +201,9 @@ func die(v interface{}) {
 }
 
 func main() {
+	if len(os.Args) == 1 {
+		die(usage)
+	}
 	flag.CommandLine.Usage = func() {
 		fmt.Fprintln(os.Stderr, usage)
 	}
