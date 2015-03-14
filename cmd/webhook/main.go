@@ -7,7 +7,6 @@
 //
 //   webhook [-cert file -key file] [-addr address] -secret key script
 //
-//
 // The struct being passed to the template script is:
 //
 //   type Event struct {
@@ -22,6 +21,8 @@
 // Template scripts use template syntax of text/template package. Each template
 // script has registered extra control functions:
 //
+//   env
+//   	An alias for os.Getenv.
 //   log
 //   	An alias for log.Println. Used only for side-effect, returns empty string.
 //   logf
@@ -48,8 +49,8 @@
 //
 // Webhook listens on 0.0.0.0:8080 by default.
 //
-// The -cert and -key flags are used to provide paths for certificate and private
-// key files. When specified, webhook serves HTTPS connection by default on 0.0.0.0:8443.
+// The -cert and -key flags are used to provide paths for the certificate and private
+// key files. When specified, webhook serves HTTPS connections by default on 0.0.0.0:8443.
 //
 // The -addr flag can be used to specify a network address for the webhook to listen on.
 //
@@ -100,6 +101,8 @@ the webhook package.
 Template scripts use template syntax of text/template package. Each template
 script has registered extra control functions:
 
+	env
+		An alias for os.Getenv.
 	log
 		An alias for log.Println. Used only for side-effect, returns empty string.
 	logf
@@ -151,6 +154,9 @@ type Event struct {
 }
 
 var scriptFuncs = template.FuncMap{
+	"env": func(s string) string {
+		return os.Getenv(s)
+	},
 	"exec": func(cmd string, args ...string) (string, error) {
 		out, err := exec.Command(cmd, args...).Output()
 		return string(bytes.TrimSpace(out)), err
@@ -201,7 +207,7 @@ func (d dumper) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func now() string {
-	return time.Now().UTC().Format("2006-01-02 at 03.04.05,00")
+	return time.Now().UTC().Format("2006-01-02 at 03.04.05.000")
 }
 
 func dump(event string, p []byte) {
