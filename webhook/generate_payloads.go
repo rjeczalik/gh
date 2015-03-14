@@ -23,11 +23,7 @@ import (
 
 const docURL = "https://developer.github.com/v3/activity/events/types"
 
-var (
-	output   string
-	testdata string
-	offline  bool
-)
+var scrap = flag.Bool("scrap", false, "Build payloads by scrapping on-line GitHub documentation.")
 
 type rawEvent struct {
 	Name        string
@@ -221,23 +217,6 @@ func die(v interface{}) {
 }
 
 func init() {
-	flag.StringVar(&output, "o", "payloads.go", "Output generated Go structs to this file.")
-	flag.BoolVar(&offline, "offline", false, "Uses JSON files in testdata/ directory instead of processing on-line GitHub docs.")
-	dump := flag.Bool("t", false, "Write all intermediate JSON files for testing.")
-	flag.Parse()
-	if !filepath.IsAbs(output) {
-		s, err := filepath.Abs(output)
-		if err != nil {
-			die(err)
-		}
-		output = s
-	}
-	if *dump {
-		testdata = filepath.Join(filepath.Dir(output), "testdata")
-		if err := os.MkdirAll(testdata, 0755); err != nil {
-			die(err)
-		}
-	}
 }
 
 func snakeCase(s string) (t string) {
@@ -281,6 +260,7 @@ func scrapPayload(s *goquery.Selection, n int) string {
 }
 
 func scrapPayloadURL(url string, n int) string {
+	log.Printf("Fetching %s . . .", url)
 	res, err := http.Get(url)
 	if err != nil {
 		die(err)
@@ -324,13 +304,11 @@ func externalJSON(event *rawEvent, s *goquery.Selection) bool {
 }
 
 func pingEvent() rawEvent {
-	body, err := ioutil.ReadFile(filepath.Join("testdata", "ping.json"))
-	if err != nil {
-		die(err)
-	}
+	const raw = `{"zen":"Random string of GitHub zen","hook_id":0,"hook":%s}`
+	var hook = scrapPayloadURL("https://developer.github.com/v3/repos/hooks/", 1)
 	return rawEvent{
 		Name:        "PingEvent",
-		PayloadJSON: string(body),
+		PayloadJSON: fmt.Sprintf(raw, hook),
 	}
 }
 
@@ -424,12 +402,8 @@ func linearObjects(tree map[string]interface{}) (obj []object) {
 	return obj
 }
 
-func main() {
-	f, err := ioutil.TempFile(filepath.Split(output))
-	if err != nil {
-		die(err)
-	}
-	defer func() { nonil(f.Close(), os.Remove(f.Name())) }()
+func scrapGithubDocs() (events []rawEvent) {
+	log.Printf("Fetching %s . . .", docURL)
 	res, err := http.Get(docURL)
 	if err != nil {
 		die(err)
@@ -439,51 +413,72 @@ func main() {
 	if err != nil {
 		die(err)
 	}
-	var events []rawEvent
-	if offline {
-		fis, err := ioutil.ReadDir("testdata")
+	events = append(events, pingEvent())
+	var n = len(events)
+	doc.Find(`div[class='content'] > h2[id$='event'],h3[id^='payload']+table,table+pre`).Each(
+		func(i int, s *goquery.Selection) {
+			switch {
+			case n == len(events):
+				events = append(events, rawEvent{Name: s.Text()})
+			case externalJSON(&events[n], s):
+				n++
+			default:
+				s.Find(`pre > code[class^='language']`).Each(
+					func(_ int, s *goquery.Selection) {
+						if events[n].PayloadJSON != "" {
+							die(fmt.Sprintf("duplicate JSON payload for %q event (i=%d)",
+								events[n].Name, i))
+						}
+						events[n].PayloadJSON = s.Text()
+					})
+				if events[n].PayloadJSON != "" {
+					n++
+				}
+			}
+		})
+	return events
+}
+
+func readTestdata() (events []rawEvent) {
+	fis, err := ioutil.ReadDir("testdata")
+	if err != nil {
+		die(err)
+	}
+	for _, fi := range fis {
+		event := strings.ToLower(fi.Name())
+		if !strings.HasSuffix(event, ".json") {
+			fmt.Fprintln(os.Stderr, "webhook: ignoring", fi.Name())
+			continue
+		}
+		event = camelCase(event[:len(event)-len(".json")]) + "Event"
+		if (*rawEventSlice)(&events).Contains(event) {
+			die(fmt.Sprintf("duplicate JSON files for %q event", event))
+		}
+		body, err := ioutil.ReadFile(filepath.Join("testdata", fi.Name()))
 		if err != nil {
 			die(err)
 		}
-		for _, fi := range fis {
-			event := strings.ToLower(fi.Name())
-			if !strings.HasSuffix(event, ".json") {
-				fmt.Fprintln(os.Stderr, "webhook: ignoring", fi.Name())
-				continue
-			}
-			event = camelCase(event[:len(event)-len(".json")]) + "Event"
-			if (*rawEventSlice)(&events).Contains(event) {
-				die(fmt.Sprintf("duplicate JSON files for %q event", event))
-			}
-			body, err := ioutil.ReadFile(filepath.Join("testdata", fi.Name()))
-			if err != nil {
-				die(err)
-			}
-			events = append(events, rawEvent{Name: event, PayloadJSON: string(body)})
-		}
+		events = append(events, rawEvent{Name: event, PayloadJSON: string(body)})
+	}
+	return events
+}
+
+func main() {
+	flag.Parse()
+	if os.Getenv("WEBHOOK_SCRAP") != "" {
+		fmt.Println("scrapping")
+		*scrap = true
+	}
+	f, err := ioutil.TempFile(".", "payloads.go")
+	if err != nil {
+		die(err)
+	}
+	defer func() { nonil(f.Close(), os.Remove(f.Name())) }()
+	var events []rawEvent
+	if *scrap {
+		events = scrapGithubDocs()
 	} else {
-		events = append(events, pingEvent())
-		var n = len(events)
-		doc.Find(`div[class='content'] > h2[id$='event'],h3[id^='payload']+table,table+pre`).Each(
-			func(i int, s *goquery.Selection) {
-				switch {
-				case n == len(events):
-					events = append(events, rawEvent{Name: s.Text()})
-				case externalJSON(&events[n], s):
-					n++
-				default:
-					s.Find(`pre > code[class^='language']`).Each(
-						func(_ int, s *goquery.Selection) {
-							if events[n].PayloadJSON != "" {
-								die(fmt.Sprintf("duplicate JSON payload for %q event (i=%d)", events[n].Name, i))
-							}
-							events[n].PayloadJSON = s.Text()
-						})
-					if events[n].PayloadJSON != "" {
-						n++
-					}
-				}
-			})
+		events = readTestdata()
 	}
 	rawEventSlice(events).Sort()
 	for i := range events {
@@ -494,7 +489,6 @@ func main() {
 			die(fmt.Sprintf("empty payload for %q event (i=%d)", events[i].Name, i))
 		}
 	}
-	log.SetOutput(ioutil.Discard)
 	if err := tmplHeader.Execute(f, events); err != nil {
 		die(err)
 	}
@@ -513,12 +507,17 @@ func main() {
 		die(err)
 	}
 	// os.Rename fails under Windows when target file exists.
-	if err := nonil(os.RemoveAll(output), os.Rename(f.Name(), output)); err != nil {
+	if err := nonil(os.RemoveAll("payloads.go"), os.Rename(f.Name(), "payloads.go")); err != nil {
 		die(err)
 	}
-	if testdata != "" && !offline {
+	if *scrap {
+		if err := os.MkdirAll("testdata", 0755); err != nil {
+			die(err)
+		}
 		for _, event := range events {
-			f, err := os.OpenFile(filepath.Join(testdata, snakeCase(event.Name)+".json"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+			name := filepath.Join("testdata", snakeCase(event.Name)+".json")
+			log.Printf("Writing %s . . .", name)
+			f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 			if err != nil {
 				die(err)
 			}

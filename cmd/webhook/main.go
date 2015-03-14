@@ -39,7 +39,7 @@
 //   > {{if .Name | eq "push"}}
 //   >   {{logf "%s pushed to %s" .Payload.Pusher.Email .Payload.Repository.Name}}
 //   > {{endif}}
-//   EOF
+//   > EOF
 //
 // And start the webhook:
 //

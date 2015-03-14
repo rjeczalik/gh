@@ -117,8 +117,8 @@ import (
 	"time"
 )
 
-//go:generate go run generate_payloads.go -t -o payloads.go
-//go:generate go test -run TestGenerateMockHelper -- -generate mock_test.go
+//go:generate go run generate_payloads.go
+//go:generate go test -run TestGenerateMockHelper -- -generate
 //go:generate gofmt -w -s payloads.go mock_test.go
 
 var null = []byte("null")
