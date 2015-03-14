@@ -1,4 +1,113 @@
-// Package webhook implements server handling for GitHub Webhooks POST requests.
+// Package webhook implements middleware for GitHub Webhooks. User provides
+// webhook service object that handles events delivered by GitHub. Webhook
+// handler verifies payload signature delivered along with the event, unmarshals
+// it to corresponding event struct and dispatches control to user service.
+//
+// The types of events are configured up front during webhook creation. Only
+// "application/json" content type is supported for incoming events.
+//
+// Event types
+//
+//           Name       |            Type
+//   -------------------+-----------------------------
+//    commit_comment    | *webhook.CommitCommentEvent
+//   -------------------+-----------------------------
+//    create            | *webhook.CreateEvent
+//   -------------------+-----------------------------
+//    delete            | *webhook.DeleteEvent
+//   -------------------+-----------------------------
+//    deployment        | *webhook.DeploymentEvent
+//   -------------------+-----------------------------
+//    deployment_status | *webhook.DeploymentStatusEvent
+//   -------------------+-----------------------------
+//    download          | *webhook.DownloadEvent
+//   -------------------+-----------------------------
+//    follow            | *webhook.FollowEvent
+//   -------------------+-----------------------------
+//    fork_apply        | *webhook.ForkApplyEvent
+//   -------------------+-----------------------------
+//    fork              | *webhook.ForkEvent
+//   -------------------+-----------------------------
+//    gist              | *webhook.GistEvent
+//   -------------------+-----------------------------
+//    gollum            | *webhook.GollumEvent
+//   -------------------+-----------------------------
+//    issue_comment     | *webhook.IssueCommentEvent
+//   -------------------+-----------------------------
+//    issues            | *webhook.IssuesEvent
+//   -------------------+-----------------------------
+//    member            | *webhook.MemberEvent
+//   -------------------+-----------------------------
+//    membership        | *webhook.MembershipEvent
+//   -------------------+-----------------------------
+//    page_build        | *webhook.PageBuildEvent
+//   -------------------+-----------------------------
+//    ping              | *webhook.PingEvent
+//   -------------------+-----------------------------
+//    public            | *webhook.PublicEvent
+//   -------------------+-----------------------------
+//    push              | *webhook.PushEvent
+//   -------------------+-----------------------------
+//    release           | *webhook.ReleaseEvent
+//   -------------------+-----------------------------
+//    repository        | *webhook.RepositoryEvent
+//   -------------------+-----------------------------
+//    status            | *webhook.StatusEvent
+//   -------------------+-----------------------------
+//    team_add          | *webhook.TeamAddEvent
+//   -------------------+-----------------------------
+//    watch             | *webhook.WatchEvent
+//   -------------------+---------+----------------------------------------
+//    pull_request_review_comment | *webhook.PullRequestReviewCommentEvent
+//   -----------------------------+----------------------------------------
+//
+// Handler service
+//
+// Webhook dispatches incoming events to user-provided handler service. Each
+// method that takes *Event struct as a single argument is mapped for handling
+// corresponding event type according to the above table. In order to handle
+// all the events with single method, webhook handler looks up for the method
+// with the following definition:
+//
+//   func (T) MethodName(eventName string, eventPayload interface{})
+//
+// If a handler service has defined both: methods for handling particular events
+// and method hadling all events, the former has the priority - if there exists
+// no method for handling particular event type, the blanket handler will be used.
+//
+// Example
+//
+// The following handler service logs each incoming event.
+//
+//   package main
+//
+//   import (
+//   	"log"
+//   	"net/http"
+//
+//   	"github.com/rjeczalik/gh/webhook"
+//   )
+//
+//   type LoggerService struct{}
+//
+//   func (LoggerService) Ping(event *webhook.PingEvent) {
+//   	log.Printf("supported events: %v", event.Hook.Events)
+//   }
+//
+//   func (LoggerService) Push(event *webhook.PushEvent) {
+//   	log.Printf("%s has pushed to %s", event.Pusher.Email, event.Repository.Name)
+//   }
+//
+//   func (LoggerService) All(name string, event interface{}) {
+//   	log.Println("event", event)
+//   }
+//
+//   func main() {
+//      log.Fatal(http.ListenAndServe(":8080", webhook.New("secret", LoggerService{}))
+//   }
+//
+// The "ping" and "push" event are handle accordingly by the Ping and Push methods,
+// all the rest are handled with the All one.
 package webhook
 
 import (

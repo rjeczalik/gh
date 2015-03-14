@@ -35,8 +35,8 @@
 // In order to log an e-mail of each person that pushed to your repository, create
 // a template script with the following content:
 //
-//   $ cat >push.tsc <EOF
-//   > {{if .Name eq "push"}}
+//   $ cat >push.tsc <<EOF
+//   > {{if .Name | eq "push"}}
 //   >   {{logf "%s pushed to %s" .Payload.Pusher.Email .Payload.Repository.Name}}
 //   > {{endif}}
 //   EOF

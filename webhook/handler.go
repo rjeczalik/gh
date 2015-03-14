@@ -77,6 +77,7 @@ func hmacHexDigest(secret string, p []byte) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// Handler is a middleware that handles webhook's HTTP requests.
 type Handler struct {
 	// ErrorLog specifies an optional logger for errors serving requests.
 	// If nil, logging goes to os.Stderr via the log package's standard logger.
@@ -87,6 +88,9 @@ type Handler struct {
 	method map[string]reflect.Method // event handling methods
 }
 
+// New creates new middleware and registers receiver's method for event handling.
+// It panics if receiver has multiple methods that take the same type of event
+// as an argument.
 func New(secret string, rcvr interface{}) *Handler {
 	if secret == "" {
 		panic("webhook: called New with empty secret")
