@@ -159,6 +159,9 @@ var scriptFuncs = template.FuncMap{
 	},
 	"exec": func(cmd string, args ...string) (string, error) {
 		out, err := exec.Command(cmd, args...).Output()
+		if *debug {
+			log.Printf("[DEBUG] exec cmd=%s args=%q err=%v", cmd, args, err)
+		}
 		return string(bytes.TrimSpace(out)), err
 	},
 	"log": func(v ...interface{}) string {
