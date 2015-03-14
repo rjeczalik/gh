@@ -165,10 +165,15 @@ var scriptFuncs = template.FuncMap{
 		return string(bytes.TrimSpace(out)), err
 	},
 	"log": func(v ...interface{}) string {
-		log.Println(v...)
+		if len(v) != 0 {
+			log.Println(v...)
+		}
 		return ""
 	},
 	"logf": func(format string, v ...interface{}) string {
+		if format == "" {
+			return ""
+		}
 		if len(v) == 0 {
 			log.Printf("%s", format)
 		} else {
