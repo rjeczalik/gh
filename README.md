@@ -118,16 +118,16 @@ Notify Slack's channel about recent push:
 > EOF
 ```
 ```
-~ $ webhook -secret secret123 slack.tsc
+~ $ SLACK_TOKEN=token SLACK_CHANNEL=channel123 webhook -secret secret123 slack.tsc
 ```
 Notify HipChat's room about recent push:
 ```bash
-~ $ cat >hipchat.tsc <<EOF 
+~ $ cat >hipchat.tsc <<EOF
 > {{with $e := .}}
->   {{if eq $e.name "push"}}
->     {{with $auth := (printf "authorization: bearer %s" (env "hipchat_token"))}}
->     {{with $msg := (printf "{\"message_format\": \"text\", \"message\": \"%s pushed to %s\"}" $e.payload.pusher.email $e.payload.repository.name)}}
->     {{with $url := (printf "https://api.hipchat.com/v2/room/%s/notification" (env "hipchat_room"))}}
+>   {{if eq $e.Name "push"}}
+>     {{with $auth := (printf "authorization: bearer %s" (env "HIPCHAT_TOKEN"))}}
+>     {{with $msg := (printf "{\"message_format\": \"text\", \"message\": \"%s pushed to %s\"}" $e.Payload.Pusher.Email $e.Payload.Repository.Name)}}
+>     {{with $url := (printf "https://api.hipchat.com/v2/room/%s/notification" (env "HIPCHAT_ROOM"))}}
 >       {{exec "curl" "-h" "content-type: application/json" "-h" $auth "-x" "post" "-d" $msg $url | log}}
 >     {{end}}
 >     {{end}}
@@ -137,7 +137,7 @@ Notify HipChat's room about recent push:
 > EOF
 ```
 ```
-~ $ webhook -secret secret123 hipchat.tsc
+~ $ HIPCHAT_TOKEN=token HIPCHAT_ROOM=123 webhook -secret secret123 hipchat.tsc
 ```
 
 ### Troubleshooting
