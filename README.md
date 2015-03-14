@@ -139,3 +139,18 @@ Notify HipChat's room about recent push:
 ```
 ~ $ webhook -secret secret123 hipchat.tsc
 ```
+
+### Troubleshooting
+
+`cmd/webhook` provides `-debug` flag, which when enabled, makes tool dump to disk
+every received payload and log all commands executed via exec function within
+a template.
+
+All event payload structs are auto-generated - initially they've been generated
+by scrapping GitHub on-line documentation. If the actual payloads contain more
+or different fields than current representation, updating it is as easy as
+putting dumped JSON files to testdata/ directory and running:
+
+```
+~ $ go generate -v github.com/rjeczalik/gh/...
+```
