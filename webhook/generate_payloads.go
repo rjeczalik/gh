@@ -447,10 +447,16 @@ func readTestdata() (events []rawEvent) {
 	for _, fi := range fis {
 		event := strings.ToLower(fi.Name())
 		if !strings.HasSuffix(event, ".json") {
-			fmt.Fprintln(os.Stderr, "webhook: ignoring", fi.Name())
+			log.Println("webhook: ignoring", fi.Name())
 			continue
 		}
-		event = camelCase(event[:len(event)-len(".json")]) + "Event"
+		if i := strings.IndexRune(event, '-'); i != -1 {
+			event = event[:i]
+		} else {
+			event = event[:len(event)-len(".json")]
+		}
+		event = camelCase(event) + "Event"
+		log.Printf("webhook: reading %s (%s) . . .", fi.Name(), event)
 		if (*rawEventSlice)(&events).Contains(event) {
 			die(fmt.Sprintf("duplicate JSON files for %q event", event))
 		}

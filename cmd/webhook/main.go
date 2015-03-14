@@ -66,6 +66,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -74,6 +75,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"text/template"
+	"time"
 
 	"github.com/rjeczalik/gh/webhook"
 )
@@ -115,7 +117,7 @@ a template script with the following content:
 	> {{if .Name eq "push"}}
 	>   {{logf "%s pushed to %s" .Payload.Pusher.Email .Payload.Repository.Name}}
 	> {{endif}}
-	EOF
+	> EOF
 
 And start the webhook:
 
@@ -140,6 +142,7 @@ var (
 	key    = flag.String("key", "", "Private key file.")
 	addr   = flag.String("addr", "", "Network address to listen on. Default is :8080 for HTTP and :8443 for HTTPS.")
 	secret = flag.String("secret", "", "GitHub secret value used for signing payloads.")
+	debug  = flag.Bool("debug", false, "Dumps verified payloads into testdata directory.")
 )
 
 type Event struct {
@@ -166,23 +169,57 @@ var scriptFuncs = template.FuncMap{
 	},
 }
 
-type handler struct {
+type templater struct {
 	tmpl *template.Template
 }
 
-func newHandler(file string) (handler, error) {
+func newTemplater(file string) (templater, error) {
 	tmpl := template.New(filepath.Base(file)).Funcs(scriptFuncs)
 	tmpl, err := tmpl.ParseFiles(flag.Arg(0))
 	if err != nil {
-		return handler{}, err
+		return templater{}, err
 	}
-	return handler{tmpl: tmpl}, nil
+	return templater{tmpl: tmpl}, nil
 }
 
-func (h handler) All(event string, payload interface{}) {
+func (h templater) All(event string, payload interface{}) {
 	if err := h.tmpl.Execute(ioutil.Discard, Event{Name: event, Payload: payload}); err != nil {
 		log.Println("ERROR template error:", err)
 		return
+	}
+}
+
+type dumper struct {
+	http.Handler
+}
+
+func (d dumper) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	var buf bytes.Buffer
+	req.Body = ioutil.NopCloser(io.TeeReader(req.Body, &buf))
+	d.Handler.ServeHTTP(w, req)
+	go dump(req.Header.Get("X-GitHub-Event"), buf.Bytes())
+}
+
+func now() string {
+	return time.Now().UTC().Format("2006-01-02 at 03.04.05,00")
+}
+
+func dump(event string, p []byte) {
+	switch {
+	case event == "":
+		log.Println("[DEBUG] ERROR empty event name")
+		return
+	case len(p) == 0:
+		log.Println("[DEBUG] ERROR empty payload")
+		return
+	}
+	if err := os.MkdirAll("testdata", 0755); err != nil {
+		log.Println("[DEBUG] ERROR creating testdata:", err)
+		return
+	}
+	name := filepath.Join("testdata", fmt.Sprintf("%s-%s.json", event, now()))
+	if err := ioutil.WriteFile(name, p, 0644); err != nil {
+		log.Printf("[DEBUG] ERROR creating %s: %v", name, err)
 	}
 }
 
@@ -214,7 +251,7 @@ func main() {
 	if (*cert == "") != (*key == "") {
 		die("both -cert and -key flags must be provided")
 	}
-	handler, err := newHandler(flag.Arg(0))
+	tmpl, err := newTemplater(flag.Arg(0))
 	if err != nil {
 		die(err)
 	}
@@ -252,8 +289,12 @@ func main() {
 		}
 		listener = l
 	}
+	var handler http.Handler = webhook.New(*secret, tmpl)
+	if *debug {
+		handler = dumper{Handler: handler}
+	}
 	log.Printf("INFO Listening on %s . . .", listener.Addr())
-	if err := http.Serve(listener, webhook.New(*secret, handler)); err != nil {
+	if err := http.Serve(listener, handler); err != nil {
 		die(err)
 	}
 }
