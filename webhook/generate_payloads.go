@@ -415,7 +415,7 @@ func scrapGithubDocs() (events []rawEvent) {
 	}
 	events = append(events, pingEvent())
 	var n = len(events)
-	doc.Find(`div[class='content'] > h2[id$='event'],h3[id^='payload']+table,table+pre`).Each(
+	doc.Find(`div[class='content'] > h2[id$='event'],h3[id^='payload']+table,pre`).Each(
 		func(i int, s *goquery.Selection) {
 			switch {
 			case n == len(events):
@@ -472,7 +472,6 @@ func readTestdata() (events []rawEvent) {
 func main() {
 	flag.Parse()
 	if os.Getenv("WEBHOOK_SCRAP") != "" {
-		fmt.Println("scrapping")
 		*scrap = true
 	}
 	f, err := ioutil.TempFile(".", "payloads.go")
