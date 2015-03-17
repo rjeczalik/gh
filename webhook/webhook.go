@@ -46,6 +46,8 @@
 //   -------------------+-----------------------------
 //    public            | *webhook.PublicEvent
 //   -------------------+-----------------------------
+//    pull_request      | *webhook.PullRequestEvent
+//   -------------------+-----------------------------
 //    push              | *webhook.PushEvent
 //   -------------------+-----------------------------
 //    release           | *webhook.ReleaseEvent
