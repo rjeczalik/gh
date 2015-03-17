@@ -55,7 +55,7 @@ var tmplMock = template.Must(template.New("mock_test").Funcs(fn).Parse(mock))
 
 func TestGenerateMockHelper(t *testing.T) {
 	var do bool
-	for args := os.Args[1:]; len(args) > 2; args = args[1:] {
+	for args := os.Args[1:]; len(args) > 1; args = args[1:] {
 		if args[0] == "--" && args[1] == "-generate" {
 			do = true
 			break

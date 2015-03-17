@@ -76,6 +76,10 @@ func (dh DetailHandler) Public(*PublicEvent) {
 	dh["public"]++
 }
 
+func (dh DetailHandler) PullRequest(*PullRequestEvent) {
+	dh["pull_request"]++
+}
+
 func (dh DetailHandler) PullRequestReviewComment(*PullRequestReviewCommentEvent) {
 	dh["pull_request_review_comment"]++
 }
