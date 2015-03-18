@@ -57,6 +57,8 @@
 // The -secret flag sets the secret value to verify the signature of GitHub's payloads.
 // The value is required and cannot be empty.
 //
+// The -log flag redirects output to the given file.
+//
 // The script argument is a path to the template script file which is used as a handler
 // for incoming events.
 package main
@@ -137,15 +139,18 @@ The -addr flag can be used to specify a network address for the webhook to liste
 The -secret flag sets the secret value to verify the signature of GitHub's payloads.
 The value is required and cannot be empty.
 
+The -log flag redirects output to the given file.
+
 The script argument is a path to the template script file which is used as a handler
 for incoming events.`
 
 var (
-	cert   = flag.String("cert", "", "Certificate file.")
-	key    = flag.String("key", "", "Private key file.")
-	addr   = flag.String("addr", "", "Network address to listen on. Default is :8080 for HTTP and :8443 for HTTPS.")
-	secret = flag.String("secret", "", "GitHub secret value used for signing payloads.")
-	debug  = flag.Bool("debug", false, "Dumps verified payloads into testdata directory.")
+	cert    = flag.String("cert", "", "Certificate file.")
+	key     = flag.String("key", "", "Private key file.")
+	addr    = flag.String("addr", "", "Network address to listen on. Default is :8080 for HTTP and :8443 for HTTPS.")
+	secret  = flag.String("secret", "", "GitHub secret value used for signing payloads.")
+	debug   = flag.Bool("debug", false, "Dumps verified payloads into testdata directory.")
+	logfile = flag.String("log", "", "Redirects output to the given file.")
 )
 
 type Event struct {
@@ -264,6 +269,14 @@ func main() {
 	}
 	if (*cert == "") != (*key == "") {
 		die("both -cert and -key flags must be provided")
+	}
+	if *logfile != "" {
+		f, err := os.OpenFile(*logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			die(err)
+		}
+		log.SetOutput(f)
+		defer f.Close()
 	}
 	tmpl, err := newTemplater(flag.Arg(0))
 	if err != nil {
