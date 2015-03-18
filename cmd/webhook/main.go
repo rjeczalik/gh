@@ -5,7 +5,7 @@
 //
 // Usage
 //
-//   webhook [-cert file -key file] [-addr address] -secret key script
+//   webhook [-cert file -key file] [-addr address] [-log file] -secret key script
 //
 // The struct being passed to the template script is:
 //
@@ -59,6 +59,9 @@
 //
 // The -log flag redirects output to the given file.
 //
+// The -debug flag makes webhook dump each received JSON payload into
+// $PWD/testdata/<event>-<timestamp>.json file.
+//
 // The script argument is a path to the template script file which is used as a handler
 // for incoming events.
 package main
@@ -83,7 +86,7 @@ import (
 	"github.com/rjeczalik/gh/webhook"
 )
 
-const usage = `usage: webhook [-cert file -key file] [-addr address] -secret key script
+const usage = `usage: webhook [-cert file -key file] [-addr address] [-log file] -secret key script
 
 Starts a web server which listens on GitHub's POST requests. The payload of each
 request is verified against its signature, unmarshalled into corresponding event
@@ -140,6 +143,9 @@ The -secret flag sets the secret value to verify the signature of GitHub's paylo
 The value is required and cannot be empty.
 
 The -log flag redirects output to the given file.
+
+The -debug flag makes webhook dump each received JSON payload into
+$PWD/testdata/<event>-<timestamp>.json file.
 
 The script argument is a path to the template script file which is used as a handler
 for incoming events.`
