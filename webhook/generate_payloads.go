@@ -53,6 +53,19 @@ func (p rawEventSlice) Contains(event string) bool {
 	return i != len(p) && p[i].Name == event
 }
 
+func unique(events []rawEvent) []string {
+	var unique = make(map[string]struct{})
+	for i := range events {
+		unique[events[i].Name] = struct{}{}
+	}
+	s := make([]string, 0, len(unique))
+	for k := range unique {
+		s = append(s, k)
+	}
+	sort.Strings(s)
+	return s
+}
+
 type memberSet []member
 
 func (ms memberSet) Search(name string) int {
@@ -120,7 +133,7 @@ package webhook
 import "reflect"
 
 var payloads = payloadsMap{
-{{range $_, $event := .}}	"{{snakeCase $event.Name}}": reflect.TypeOf((*{{$event.Name}})(nil)).Elem(),
+{{range $_, $event := .}}	"{{snakeCase $event}}": reflect.TypeOf((*{{$event}})(nil)).Elem(),
 {{end}}
 }
 `
@@ -163,6 +176,7 @@ var hardcodedTypes = map[string]string{
 	"name":        "string",
 	"target_url":  "string",
 	"description": "string",
+	"label":       "string",
 }
 
 // File is a value of gist's Files map, it's handled separately as
@@ -458,7 +472,7 @@ func readTestdata() (events []rawEvent) {
 		event = camelCase(event) + "Event"
 		log.Printf("webhook: reading %s (%s) . . .", fi.Name(), event)
 		if (*rawEventSlice)(&events).Contains(event) {
-			die(fmt.Sprintf("duplicate JSON files for %q event", event))
+			fmt.Fprintf(os.Stderr, "merging duplicate JSON file for %q event . . .\n", event)
 		}
 		body, err := ioutil.ReadFile(filepath.Join("testdata", fi.Name()))
 		if err != nil {
@@ -494,7 +508,7 @@ func main() {
 			die(fmt.Sprintf("empty payload for %q event (i=%d)", events[i].Name, i))
 		}
 	}
-	if err := tmplHeader.Execute(f, events); err != nil {
+	if err := tmplHeader.Execute(f, unique(events)); err != nil {
 		die(err)
 	}
 	typeTree := make(map[string]interface{}, len(events))
