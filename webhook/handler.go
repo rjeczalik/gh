@@ -18,11 +18,12 @@ import (
 const maxPayloadLen = 1024 * 1024 // 1MiB
 
 var (
-	errMethod  = errors.New("invalid HTTP method")
-	errHeaders = errors.New("invalid HTTP headers")
-	errSig     = errors.New("invalid signature header")
-	errSigKind = errors.New("unsupported signature hash type")
-	errPayload = errors.New("unsupported payload type")
+	errMethod      = errors.New("invalid HTTP method")
+	errHeaders     = errors.New("invalid HTTP headers")
+	errSig         = errors.New("invalid signature header")
+	errSigKind     = errors.New("unsupported signature hash type")
+	errPayload     = errors.New("unsupported payload type")
+	errContentType = errors.New("unsupported content type")
 )
 
 var empty = reflect.TypeOf(func(interface{}) {}).In(0)
@@ -106,7 +107,7 @@ func New(secret string, rcvr interface{}) *Handler {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	event := req.Header.Get("X-GitHub-Event")
 	sig := strings.Split(req.Header.Get("X-Hub-Signature"), "=")
-	switch {
+	switch content := strings.Split(req.Header.Get("Content-Type"), ";"); {
 	case req.Method != "POST":
 		h.fatal(w, req, http.StatusMethodNotAllowed, errMethod)
 		return
@@ -118,6 +119,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	case sig[0] != "sha1":
 		h.fatal(w, req, http.StatusBadRequest, errSigKind)
+		return
+	case len(content) == 0 || content[0] != "application/json":
+		h.fatal(w, req, http.StatusBadRequest, errContentType)
 		return
 	}
 	body := bytes.NewBuffer(make([]byte, 0, int(req.ContentLength)))
