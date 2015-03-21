@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"text/template"
@@ -124,6 +125,82 @@ func (os *objectSet) Add(o object) {
 		copy((*os)[i+1:], (*os)[i:])
 		(*os)[i] = o
 	}
+}
+
+type typeTree map[string]interface{}
+
+func newTypeTree(events []rawEvent) typeTree {
+	t := make(typeTree, len(events))
+	for _, e := range events {
+		t.push(e)
+	}
+	return t
+}
+
+func (t typeTree) push(e rawEvent) {
+	type node struct {
+		typ, v map[string]interface{}
+	}
+	var v map[string]interface{}
+	if err := json.Unmarshal([]byte(e.PayloadJSON), &v); err != nil {
+		die(err)
+	}
+	typ, ok := t[e.Name].(map[string]interface{})
+	if !ok {
+		t[e.Name] = v
+		return
+	}
+	nd, stack := node{}, []node{{typ: typ, v: v}}
+	for n := len(stack); n != 0; n = len(stack) {
+		nd, stack = stack[n-1], stack[:n-1]
+		for k, v := range nd.v {
+			typ, ok := nd.typ[k]
+			if !ok {
+				nd.typ[k] = v
+				continue
+			}
+			switch rtyp, rv := reflect.TypeOf(typ), reflect.TypeOf(v); {
+			case rtyp == nil && rv != nil && rv.Kind() == reflect.Map:
+				typ = make(map[string]interface{})
+				nd.typ[k] = typ
+			case rtyp != nil && rv != nil && rtyp != rv:
+				die(fmt.Sprintf("merge: incompatible types for %s: %T vs %v", k, v, typ))
+			default:
+				if v, ok := v.(map[string]interface{}); ok {
+					stack = append(stack, node{typ: typ.(map[string]interface{}), v: v})
+				}
+			}
+		}
+	}
+}
+
+func (t typeTree) objects() (obj []object) {
+	var stack = make([]node, 0, len(t))
+	for k, v := range t {
+		v, ok := v.(map[string]interface{})
+		if !ok {
+			die(fmt.Sprintf("%s is not a JSON object", k))
+		}
+		stack = append(stack, node{name: k, nodes: v})
+	}
+	obj = append(obj, hardcodedFileType)
+	var nd node
+	for n := len(stack); n != 0; n = len(stack) {
+		nd, stack = stack[n-1], stack[:n-1]
+		o := object{Name: nd.name, Members: make([]member, 0, len(nd.nodes))}
+		for k, v := range nd.nodes {
+			// Ignore "_links" member as it's redundant and it pollutes a number
+			// of structs with a "href" member.
+			if k == "_links" {
+				continue
+			}
+			m := member{Name: camelCase(k), Tag: k}
+			setType(&m, v, nd.name, &stack)
+			(*memberSet)(&o.Members).Add(m)
+		}
+		(*objectSet)(&obj).Add(o)
+	}
+	return obj
 }
 
 const header = `// Created by go generate; DO NOT EDIT
@@ -387,35 +464,6 @@ var setType = func() func(*member, interface{}, string, *[]node) {
 	return setType
 }()
 
-func linearObjects(tree map[string]interface{}) (obj []object) {
-	var stack = make([]node, 0, len(tree))
-	for k, v := range tree {
-		v, ok := v.(map[string]interface{})
-		if !ok {
-			die(fmt.Sprintf("%s is not a JSON object", k))
-		}
-		stack = append(stack, node{name: k, nodes: v})
-	}
-	obj = append(obj, hardcodedFileType)
-	var nd node
-	for n := len(stack); n != 0; n = len(stack) {
-		nd, stack = stack[n-1], stack[:n-1]
-		o := object{Name: nd.name, Members: make([]member, 0, len(nd.nodes))}
-		for k, v := range nd.nodes {
-			// Ignore "_links" member as it's redundant and it pollutes a number
-			// of structs with a "href" member.
-			if k == "_links" {
-				continue
-			}
-			m := member{Name: camelCase(k), Tag: k}
-			setType(&m, v, nd.name, &stack)
-			(*memberSet)(&o.Members).Add(m)
-		}
-		(*objectSet)(&obj).Add(o)
-	}
-	return obj
-}
-
 func scrapGithubDocs() (events []rawEvent) {
 	log.Printf("Fetching %s . . .", docURL)
 	res, err := http.Get(docURL)
@@ -511,15 +559,7 @@ func main() {
 	if err := tmplHeader.Execute(f, unique(events)); err != nil {
 		die(err)
 	}
-	typeTree := make(map[string]interface{}, len(events))
-	for _, event := range events {
-		var v interface{}
-		if err := json.Unmarshal([]byte(event.PayloadJSON), &v); err != nil {
-			die(err)
-		}
-		typeTree[event.Name] = v
-	}
-	if err := tmplTypes.Execute(f, linearObjects(typeTree)); err != nil {
+	if err := tmplTypes.Execute(f, newTypeTree(events).objects()); err != nil {
 		die(err)
 	}
 	if err := nonil(f.Sync(), f.Close()); err != nil {
