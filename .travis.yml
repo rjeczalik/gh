@@ -15,6 +15,8 @@ env:
 install:
  - go get golang.org/x/tools/cmd/vet golang.org/x/tools/cmd/cover github.com/mattn/goveralls github.com/modocache/gover
  - go get -t -v ./...
+ - go get -v github.com/PuerkitoBio/goquery
+ - go generate -v ./...
 
 script:
  - go tool vet -all .
