@@ -151,7 +151,7 @@ Take the following steps to fix the problem:
 - restart your webhook command with `-dump` flag (or wrap your `*webhook.Handler` with [webhook.Dump](https://godoc.org/github.com/rjeczalik/gh/webhook#Dump)):
 
 ```
-~ $ webhook -dump /tmp -cert cert.pem -key key.pem -secret123 handler.tsc
+~ $ webhook -dump /tmp -secret secret123 handler.tsc
 ```
 
 - redeliver the event, it's going to fail again, but this time it will be dumped to  `/tmp/pull_request-ef748000-d078-11e4-91b6-77fc544482ea.json` file (named after the event and its `X-GitHub-Delivery` header)
