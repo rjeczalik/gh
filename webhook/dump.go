@@ -25,34 +25,14 @@ func nonil(err ...error) error {
 	return nil
 }
 
-func writefile(name string, p []byte, perm os.FileMode) error {
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_SYNC, perm)
-	if err != nil {
-		return err
-	}
-	n, err := f.Write(p)
-	if n < len(p) {
-		err = nonil(err, io.ErrShortWrite)
-	}
-	return nonil(err, f.Sync(), f.Close())
-}
-
-type recorder struct {
-	status int
-	http.ResponseWriter
-}
-
-func record(w http.ResponseWriter) *recorder {
-	return &recorder{ResponseWriter: w}
-}
-
-func (r *recorder) WriteHeader(status int) {
-	r.status = status
-	r.ResponseWriter.WriteHeader(status)
-}
-
 // Dumper is a helper handler, which wraps other http.Handler and dumps its
-// requests' bodies to files, when serving them was successful.
+// requests' bodies to files in Dir directory and named after <event>-<delivery>.json,
+// where:
+//
+//   - <event> is value of X-GitHub-Event header
+//   - <delivery> is value of X-GitHub-Delivery header
+//
+// If headers are missing, current time is used instead.
 type Dumper struct {
 	Handler http.Handler // underlying handler
 	Dir     string       // directory where files are written
@@ -67,8 +47,8 @@ type Dumper struct {
 }
 
 // Dump creates new Dumper handler, which wraps a webhook handler and dumps each
-// request's body to a file when response was served successfully. It was
-// added for *webhook.Handler in mind, but works on every generic http.Handler.
+// request's body to a file. It was added for *webhook.Handler in mind, but works
+// on every generic http.Handler.
 //
 // If the destination directory is empty, Dump uses ioutil.TempDir instead.
 // If the destination directory is a relative path, Dump uses filepath.Abs on it.
@@ -107,12 +87,9 @@ func Dump(dir string, handler http.Handler) *Dumper {
 // ServeHTTP implements the http.Handler interface.
 func (d *Dumper) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	buf := &bytes.Buffer{}
-	rec := record(w)
 	req.Body = ioutil.NopCloser(io.TeeReader(req.Body, buf))
-	d.Handler.ServeHTTP(rec, req)
-	if rec.status == 200 {
-		go d.dump(req.Header.Get("X-GitHub-Event"), req.Header.Get("X-GitHub-Delivery"), buf)
-	}
+	d.Handler.ServeHTTP(w, req)
+	go d.dump(req.Header.Get("X-GitHub-Event"), req.Header.Get("X-GitHub-Delivery"), buf)
 }
 
 func (d *Dumper) dump(event, delivery string, buf *bytes.Buffer) {
