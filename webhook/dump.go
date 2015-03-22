@@ -111,15 +111,18 @@ func (d *Dumper) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	req.Body = ioutil.NopCloser(io.TeeReader(req.Body, buf))
 	d.Handler.ServeHTTP(rec, req)
 	if rec.status == 200 {
-		go d.dump(req.Header.Get("X-GitHub-Event"), buf)
+		go d.dump(req.Header.Get("X-GitHub-Event"), req.Header.Get("X-GitHub-Delivery"), buf)
 	}
 }
 
-func (d *Dumper) dump(event string, buf *bytes.Buffer) {
+func (d *Dumper) dump(event, delivery string, buf *bytes.Buffer) {
 	var name string
-	if event != "" {
+	switch {
+	case event != "" && delivery != "":
+		name = filepath.Join(d.Dir, fmt.Sprintf("%s-%s.json", event, delivery))
+	case event != "":
 		name = filepath.Join(d.Dir, fmt.Sprintf("%s-%s.json", event, now()))
-	} else {
+	default:
 		name = filepath.Join(d.Dir, now())
 	}
 	var err error
