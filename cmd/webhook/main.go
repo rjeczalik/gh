@@ -59,8 +59,8 @@
 //
 // The -log flag redirects output to the given file.
 //
-// The -debug flag makes webhook dump each received JSON payload into
-// $PWD/testdata/<event>-<timestamp>.json file.
+// The -dump flag makes webhook dump each received JSON payload into specified
+// directory. The file is named after <event>-<date>.json.
 //
 // The script argument is a path to the template script file which is used as a handler
 // for incoming events.
@@ -72,7 +72,6 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -81,7 +80,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"text/template"
-	"time"
 
 	"github.com/rjeczalik/gh/webhook"
 )
@@ -144,8 +142,8 @@ The value is required and cannot be empty.
 
 The -log flag redirects output to the given file.
 
-The -debug flag makes webhook dump each received JSON payload into
-$PWD/testdata/<event>-<timestamp>.json file.
+The -dump flag makes webhook dump each received JSON payload into specified
+directory. The file is named after <event>-<date>.json.
 
 The script argument is a path to the template script file which is used as a handler
 for incoming events.`
@@ -156,6 +154,7 @@ var (
 	addr    = flag.String("addr", "", "Network address to listen on. Default is :8080 for HTTP and :8443 for HTTPS.")
 	secret  = flag.String("secret", "", "GitHub secret value used for signing payloads.")
 	debug   = flag.Bool("debug", false, "Dumps verified payloads into testdata directory.")
+	dump    = flag.String("dump", "", "Dumps verified payloads into given directory.")
 	logfile = flag.String("log", "", "Redirects output to the given file.")
 )
 
@@ -214,40 +213,6 @@ func (h templater) All(event string, payload interface{}) {
 	}
 }
 
-type dumper struct {
-	http.Handler
-}
-
-func (d dumper) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	var buf bytes.Buffer
-	req.Body = ioutil.NopCloser(io.TeeReader(req.Body, &buf))
-	d.Handler.ServeHTTP(w, req)
-	go dump(req.Header.Get("X-GitHub-Event"), buf.Bytes())
-}
-
-func now() string {
-	return time.Now().UTC().Format("2006-01-02 at 03.04.05.000")
-}
-
-func dump(event string, p []byte) {
-	switch {
-	case event == "":
-		log.Println("[DEBUG] ERROR empty event name")
-		return
-	case len(p) == 0:
-		log.Println("[DEBUG] ERROR empty payload")
-		return
-	}
-	if err := os.MkdirAll("testdata", 0755); err != nil {
-		log.Println("[DEBUG] ERROR creating testdata:", err)
-		return
-	}
-	name := filepath.Join("testdata", fmt.Sprintf("%s-%s.json", event, now()))
-	if err := ioutil.WriteFile(name, p, 0644); err != nil {
-		log.Printf("[DEBUG] ERROR creating %s: %v", name, err)
-	}
-}
-
 func nonil(s ...string) string {
 	for _, s := range s {
 		if s != "" {
@@ -276,6 +241,9 @@ func main() {
 	if (*cert == "") != (*key == "") {
 		die("both -cert and -key flags must be provided")
 	}
+	if *debug && *dump == "" {
+		*dump = "testdata"
+	}
 	if *logfile != "" {
 		f, err := os.OpenFile(*logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
@@ -299,6 +267,8 @@ func main() {
 			Rand:         rand.Reader,
 			// Don't offer SSL3.
 			MinVersion: tls.VersionTLS10,
+			// Workaround TLS_FALLBACK_SCSV bug. For details see:
+			// https://go-review.googlesource.com/#/c/1776/
 			MaxVersion: tls.VersionTLS12,
 			// Don't offer RC4 ciphers.
 			CipherSuites: []uint16{
@@ -326,8 +296,8 @@ func main() {
 		listener = l
 	}
 	var handler http.Handler = webhook.New(*secret, tmpl)
-	if *debug {
-		handler = dumper{Handler: handler}
+	if *dump != "" {
+		handler = webhook.Dump(*dump, handler)
 	}
 	log.Printf("INFO Listening on %s . . .", listener.Addr())
 	if err := http.Serve(listener, handler); err != nil {

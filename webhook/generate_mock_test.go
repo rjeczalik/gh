@@ -7,15 +7,6 @@ import (
 	"unicode"
 )
 
-func nonil(err ...error) error {
-	for _, err := range err {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 var fn = map[string]interface{}{"camelCase": func(s string) (t string) {
 	up := true
 	for _, r := range s {

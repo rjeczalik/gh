@@ -11,6 +11,8 @@ import (
 	"testing"
 )
 
+const secret = "dupa.8"
+
 type Foo struct{}
 
 func (Foo) All(string, interface{}) {}
@@ -68,9 +70,8 @@ func TestPayloadMethods(t *testing.T) {
 	}
 }
 
-func testHandler(t *testing.T, rcrv interface{}) {
-	const secret = "dupa.8"
-	ts := httptest.NewServer(New(secret, rcrv))
+func testHandler(t *testing.T, handler http.Handler) {
+	ts := httptest.NewServer(handler)
 	defer ts.Close()
 
 	for event := range payloads {
@@ -97,7 +98,7 @@ func testHandler(t *testing.T, rcrv interface{}) {
 
 func TestHandlerWithDetail(t *testing.T) {
 	h := DetailHandler{}
-	testHandler(t, h)
+	testHandler(t, New(secret, h))
 	for event := range payloads {
 		if h[event] != 1 {
 			t.Errorf("want h[%s]=1; got %d", event, h[event])
@@ -107,11 +108,10 @@ func TestHandlerWithDetail(t *testing.T) {
 
 func TestHandlerWithBlanket(t *testing.T) {
 	h := BlanketHandler{}
-	testHandler(t, h)
+	testHandler(t, New(secret, h))
 	for event := range payloads {
 		if h[event] != 1 {
 			t.Errorf("want h[%s]=1; got %d", event, h[event])
 		}
 	}
-
 }
