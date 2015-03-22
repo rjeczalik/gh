@@ -22,6 +22,6 @@ script:
  - go tool vet -all .
  - go build ./...
  - go test -race -v ./...
- - go list -f '{{if len .TestGoFiles}}go test -coverprofile={{.Dir}}/.coverprofile {{.ImportPath}}{{end}}' ./... | xargs -i sh -c {}
- - gover
- - goveralls -coverprofile=gover.coverprofile -service=travis-ci -repotoken $COVERALLS_TOKEN
+ - if [ ! -z "$COVERALLS_TOKEN" ]; then go list -f '{{if len .TestGoFiles}}go test -coverprofile={{.Dir}}/.coverprofile {{.ImportPath}}{{end}}' ./... | xargs -i sh -c {}; fi
+ - if [ ! -z "$COVERALLS_TOKEN" ]; then gover; fi
+ - if [ ! -z "$COVERALLS_TOKEN" ]; then goveralls -coverprofile=gover.coverprofile -service=travis-ci -repotoken "$COVERALLS_TOKEN"; fi
