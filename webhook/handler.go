@@ -166,7 +166,7 @@ func (h *Handler) call(remote, event string, payload interface{}) {
 func (h *Handler) fatal(w http.ResponseWriter, req *http.Request, code int, err error) {
 	h.logf("ERROR %s: Status=%d X-GitHub-Event=%q Content-Length=%d: %v", req.RemoteAddr,
 		code, req.Header.Get("X-GitHub-Event"), req.ContentLength, err)
-	http.Error(w, http.StatusText(code), code)
+	http.Error(w, err.Error(), code)
 }
 
 func (h *Handler) logf(format string, args ...interface{}) {
