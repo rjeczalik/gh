@@ -60,7 +60,7 @@
 // The -log flag redirects output to the given file.
 //
 // The -dump flag makes webhook dump each received JSON payload into specified
-// directory. The file is named after <event>-<date>.json.
+// directory. The file is named after <event>-<X-GitHub-Delivery>.json.
 //
 // The script argument is a path to the template script file which is used as a handler
 // for incoming events.
@@ -143,7 +143,7 @@ The value is required and cannot be empty.
 The -log flag redirects output to the given file.
 
 The -dump flag makes webhook dump each received JSON payload into specified
-directory. The file is named after <event>-<date>.json.
+directory. The file is named after <event>-<X-GitHub-Delivery>.json.
 
 The script argument is a path to the template script file which is used as a handler
 for incoming events.`

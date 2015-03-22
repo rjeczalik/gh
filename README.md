@@ -140,17 +140,28 @@ Notify HipChat's room about recent push:
 ~ $ HIPCHAT_TOKEN=token HIPCHAT_ROOM=123 webhook -secret secret123 hipchat.tsc
 ```
 
-### Troubleshooting
+### Contributing to the `webhook` package
 
-`cmd/webhook` provides `-debug` flag, which when enabled, makes tool dump to disk
-every received payload and log all commands executed via exec function within
-a template.
+Occasionally it may happen that serving webhook may fail with serialization error. Since structs for event payloads are go-generated from either on-line GitHub Developer documentation or real GitHub's requests, they may not contain all fields or have wrong field types. If you notice webhook failures like the following:
 
-All event payload structs are auto-generated - initially they've been generated
-by scrapping GitHub on-line documentation. If the actual payloads contain more
-or different fields than current representation, updating it is as easy as
-putting dumped JSON files to testdata/ directory and running:
+![delivery details](https://i.imgur.com/s6JgGdb.png)
+
+Take the following steps to fix the problem:
+
+- restart your webhook command with `-dump` flag (or wrap your `*webhook.Handler` with [webhook.Dump](https://godoc.org/github.com/rjeczalik/gh/webhook#Dump)):
 
 ```
-~ $ go generate -v github.com/rjeczalik/gh/...
+~ $ webhook -dump /tmp -cert cert.pem -key key.pem -secret123 handler.tsc
 ```
+
+- redeliver the event, it's going to fail again, but this time it will be dumped to  `/tmp/pull_request-ef748000-d078-11e4-91b6-77fc544482ea.json` file (named after the event and its `X-GitHub-Delivery` header)
+- copy the file to the testdata directory of webhook package and regenerate payloads:
+
+```
+~ $ scp core@remote:/tmp/pull_request-ef748000-d078-11e4-91b6-77fc544482ea.json ~/src/github.com/rjeczalik/gh/webhook/testdata
+~ $ go generate github.com/rjeczalik/gh/...
+~ $ go test github.com/rjeczalik/gh/...
+```
+
+- if both the `go generate` and `go test` succeed, send pull request with modified `payload.go` and the JSON file
+- if either of them fail, re-run them command with `-v` flag and create issue with original error message and the verbose outputs
