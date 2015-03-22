@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,63 +18,43 @@ func hash(r io.Reader) ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
-func testFiles(t *testing.T, files map[string]string) {
-	for orig, dump := range files {
-		forig, err := os.Open(orig)
-		if err != nil {
-			t.Errorf("os.Open(%q)=%v", orig, err)
-			continue
-		}
-		fdump, err := os.Open(dump)
-		if err != nil {
-			t.Errorf("os.Open(%q)=%v", orig, nonil(err, forig.Close()))
-			continue
-		}
-		horig, err := hash(forig)
-		if err != nil {
-			t.Errorf("hashing %s failed: %v", orig, nonil(err, forig.Close(), fdump.Close()))
-			continue
-		}
-		hdump, err := hash(fdump)
-		if err != nil {
-			t.Errorf("hashing %s failed: %v", dump, nonil(err, forig.Close(), fdump.Close()))
-			continue
-		}
-		if !bytes.Equal(horig, hdump) {
-			t.Errorf("files %q and %q are not equal", orig, dump)
-		}
-	}
-}
-
 func TestDump(t *testing.T) {
-	tmp, err := ioutil.TempDir("", "testdump")
-	if err != nil {
-		t.Fatalf("ioutil.TempDir()=%v", err)
-	}
-	defer os.RemoveAll(tmp)
-	testHandler(t, Dump(tmp, New(secret, BlanketHandler{})))
-	fis, err := ioutil.ReadDir(tmp)
-	if err != nil {
-		t.Fatalf("ioutil.ReadDir(%q)=%v", tmp, err)
-	}
-	if len(fis) != len(payloads) {
-		t.Fatalf("want number of dumped files be %d; got %d", len(payloads), len(fis))
-	}
-	files := make(map[string]string)
-	for _, fi := range fis {
-		n := strings.IndexRune(fi.Name(), '-')
+	unique := make(map[string]struct{})
+	test := func(name string, p []byte, _ os.FileMode) error {
+		name = filepath.Base(name)
+		n := strings.IndexRune(name, '-')
 		if n == -1 {
-			t.Fatalf("unexpected file name: %s", fi.Name())
+			t.Fatalf("unexpected file name: %s", name)
 		}
-		event := fi.Name()[:n]
+		event := name[:n]
 		if _, ok := payloads[event]; !ok {
 			t.Fatalf("Dump written a file for a non-existing event: %s", event)
 		}
-		orig := filepath.Join("testdata", event+".json")
-		if _, ok := files[orig]; ok {
-			t.Fatalf("duplicated files for the %s event", event)
+		if _, ok := unique[event]; ok {
+			t.Fatalf("duplicate file written for the %s event", event)
 		}
-		files[orig] = filepath.Join(tmp, fi.Name())
+		unique[event] = struct{}{}
+		f, err := os.Open(filepath.Join("testdata", event+".json"))
+		if err != nil {
+			t.Fatalf("os.Open(%q)=%v", f.Name(), err)
+		}
+		defer f.Close()
+		hexpected, err := hash(f)
+		if err != nil {
+			t.Fatalf("hashing %s failed: %v", f.Name(), err)
+		}
+		h, err := hash(bytes.NewReader(p))
+		if err != nil {
+			t.Errorf("hashing dumped file failed: %v", err)
+		}
+		if !bytes.Equal(h, hexpected) {
+			t.Errorf("files %q and %q are not equal", name, f.Name())
+		}
+		return nil
 	}
-	testFiles(t, files)
+	h := &Dumper{
+		Handler:   New(secret, BlanketHandler{}),
+		WriteFile: test,
+	}
+	testHandler(t, h)
 }

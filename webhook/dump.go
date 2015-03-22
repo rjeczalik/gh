@@ -51,13 +51,22 @@ func (r *recorder) WriteHeader(status int) {
 	r.ResponseWriter.WriteHeader(status)
 }
 
-type dumper struct {
-	dir     string
-	log     *log.Logger
-	handler http.Handler
+// Dumper is a helper handler, which wraps other http.Handler and dumps its
+// requests' bodies to files, when serving them was successful.
+type Dumper struct {
+	Handler http.Handler // underlying handler
+	Dir     string       // directory where files are written
+
+	// ErrorLog specifies an optional logger for errors serving requests.
+	// If nil, logging goes to os.Stderr via the log package's standard logger.
+	ErrorLog *log.Logger
+
+	// WriteFile specifies an optional file writer.
+	// If nil, ioutil.WriteFile is used instead.
+	WriteFile func(string, []byte, os.FileMode) error
 }
 
-// Dump is a helper handler, which wraps a webhook handler and dumps each
+// Dump creates new Dumper handler, which wraps a webhook handler and dumps each
 // request's body to a file when response was served successfully. It was
 // added for *webhook.Handler in mind, but works on every generic http.Handler.
 //
@@ -67,7 +76,7 @@ type dumper struct {
 // If either of the above functions fails, Dump panics.
 // If handler is a *webhook Handler and its ErrorLog field is non-nil, Dump uses
 // it for logging.
-func Dump(dir string, handler http.Handler) http.Handler {
+func Dump(dir string, handler http.Handler) *Dumper {
 	switch {
 	case dir == "":
 		name, err := ioutil.TempDir("", "webhook")
@@ -85,35 +94,41 @@ func Dump(dir string, handler http.Handler) http.Handler {
 			panic(err)
 		}
 	}
-	d := &dumper{
-		dir:     dir,
-		handler: handler,
+	d := &Dumper{
+		Dir:     dir,
+		Handler: handler,
 	}
 	if handler, ok := handler.(*Handler); ok {
-		d.log = handler.ErrorLog
+		d.ErrorLog = handler.ErrorLog
 	}
 	return d
 }
 
 // ServeHTTP implements the http.Handler interface.
-func (d dumper) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (d *Dumper) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	buf := &bytes.Buffer{}
 	rec := record(w)
 	req.Body = ioutil.NopCloser(io.TeeReader(req.Body, buf))
-	d.handler.ServeHTTP(rec, req)
+	d.Handler.ServeHTTP(rec, req)
 	if rec.status == 200 {
 		go d.dump(req.Header.Get("X-GitHub-Event"), buf)
 	}
 }
 
-func (d dumper) dump(event string, buf *bytes.Buffer) {
+func (d *Dumper) dump(event string, buf *bytes.Buffer) {
 	var name string
 	if event != "" {
-		name = filepath.Join(d.dir, fmt.Sprintf("%s-%s.json", event, now()))
+		name = filepath.Join(d.Dir, fmt.Sprintf("%s-%s.json", event, now()))
 	} else {
-		name = filepath.Join(d.dir, now())
+		name = filepath.Join(d.Dir, now())
 	}
-	switch err := writefile(name, buf.Bytes(), 0644); err {
+	var err error
+	if d.WriteFile != nil {
+		err = d.WriteFile(name, buf.Bytes(), 0644)
+	} else {
+		err = ioutil.WriteFile(name, buf.Bytes(), 0644)
+	}
+	switch err {
 	case nil:
 		d.logf("INFO %q: written file", name)
 	default:
@@ -121,9 +136,9 @@ func (d dumper) dump(event string, buf *bytes.Buffer) {
 	}
 }
 
-func (d dumper) logf(format string, args ...interface{}) {
-	if d.log != nil {
-		d.log.Printf(format, args...)
+func (d *Dumper) logf(format string, args ...interface{}) {
+	if d.ErrorLog != nil {
+		d.ErrorLog.Printf(format, args...)
 	} else {
 		log.Printf(format, args...)
 	}
