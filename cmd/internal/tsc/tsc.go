@@ -73,7 +73,7 @@ func (s *Script) Webhook(event string, payload interface{}) {
 		err = nonil(err, c.Close())
 	}
 	if err != nil {
-		s.logf("ERROR template script error:", err)
+		s.logf("ERROR template script error: %v", err)
 	}
 }
 
