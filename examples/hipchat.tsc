@@ -1,9 +1,9 @@
 {with $e := .}}
-  {{if eq $e.name "push"}}
-    {{with $auth := (printf "authorization: bearer %s" (env "hipchat_token"))}}
-    {{with $msg := (printf "{\"message_format\": \"text\", \"message\": \"%s pushed to %s\"}" $e.payload.pusher.email $e.payload.repository.name)}}
-    {{with $url := (printf "https://api.hipchat.com/v2/room/%s/notification" (env "hipchat_room"))}}
-      {{exec "curl" "-h" "content-type: application/json" "-h" $auth "-x" "post" "-d" $msg $url | log}}
+  {{if eq $e.Name "push"}}
+    {{with $auth := (printf "Authorization: Bearer %s" $e.Args.Token)}}
+    {{with $msg := (printf "{\"message_format\": \"text\", \"message\": \"%s pushed to %s\"}" $e.Payload.Pusher.Email $e.Payload.Repository.Name)}}
+    {{with $url := (printf "https://api.hipchat.com/v2/room/%s/notification" $e.Args.Room)}}
+      {{exec "curl" "-h" "Content-Type: application/json" "-h" $auth "-x" "post" "-d" $msg $url | log}}
     {{end}}
     {{end}}
     {{end}}

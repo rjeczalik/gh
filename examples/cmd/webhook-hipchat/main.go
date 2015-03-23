@@ -1,5 +1,5 @@
-// +build ignore
-
+// Command webhook-hipchat starts GitHub Webhook server and forwards all
+// push notifications to specified hipchat room.
 package main
 
 import (
@@ -13,9 +13,10 @@ import (
 )
 
 var (
-	secret = flag.String("secret", "", "GitHub webhook secret")
-	token  = flag.String("token", "", "HipChat personal API token")
-	room   = flag.String("room", "", "HipChat room ID")
+	addr   = flag.String("http", ":8080", "Network address to listen on.")
+	secret = flag.String("secret", "", "GitHub webhook secret.")
+	token  = flag.String("token", "", "HipChat personal API token.")
+	room   = flag.String("room", "", "HipChat room ID.")
 )
 
 type hipchat struct{}
@@ -37,5 +38,5 @@ func (h hipchat) Push(e *webhook.PushEvent) {
 
 func main() {
 	flag.Parse()
-	log.Fatal(http.ListenAndServe(":8080", webhook.New(*secret, hipchat{})))
+	log.Fatal(http.ListenAndServe(*addr, webhook.New(*secret, hipchat{})))
 }

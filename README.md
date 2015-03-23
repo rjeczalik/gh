@@ -109,7 +109,7 @@ Notify Slack's channel about recent push:
 > {{with $e := .}}
 >   {{if eq $e.Name "push"}}
 >     {{with $text := (urlquery (printf "%s pushed to %s" $e.Payload.Pusher.Email $e.Payload.Repository.Name))}}
->     {{with $url := (printf "https://slack.com/api/chat.postMessage?token=%s&channel=%s&text=%s" (env "SLACK_TOKEN") (env "SLACK_CHANNEL") $text)}}
+>     {{with $url := (printf "https://slack.com/api/chat.postMessage?token=%s&channel=%s&text=%s" $e.Args.Token $e.Args.Channel $text)}}
 >       {{exec "curl" "-X" "GET" $url}}
 >     {{end}}
 >     {{end}}
@@ -118,16 +118,16 @@ Notify Slack's channel about recent push:
 > EOF
 ```
 ```
-~ $ SLACK_TOKEN=token SLACK_CHANNEL=channel123 webhook -secret secret123 slack.tsc
+~ $ webhook -secret secret123 slack.tsc -- -token token123 -channel CH123
 ```
 Notify HipChat's room about recent push:
 ```bash
 ~ $ cat >hipchat.tsc <<EOF
 > {{with $e := .}}
 >   {{if eq $e.Name "push"}}
->     {{with $auth := (printf "authorization: bearer %s" (env "HIPCHAT_TOKEN"))}}
+>     {{with $auth := (printf "authorization: bearer %s" $e.Args.Token)}}
 >     {{with $msg := (printf "{\"message_format\": \"text\", \"message\": \"%s pushed to %s\"}" $e.Payload.Pusher.Email $e.Payload.Repository.Name)}}
->     {{with $url := (printf "https://api.hipchat.com/v2/room/%s/notification" (env "HIPCHAT_ROOM"))}}
+>     {{with $url := (printf "https://api.hipchat.com/v2/room/%s/notification" $e.Args.Room)}}
 >       {{exec "curl" "-h" "content-type: application/json" "-h" $auth "-x" "post" "-d" $msg $url | log}}
 >     {{end}}
 >     {{end}}
@@ -137,7 +137,7 @@ Notify HipChat's room about recent push:
 > EOF
 ```
 ```
-~ $ HIPCHAT_TOKEN=token HIPCHAT_ROOM=123 webhook -secret secret123 hipchat.tsc
+~ $ webhook -secret secret123 hipchat.tsc -- -token token123 -room 123
 ```
 
 ### Contributing to the `webhook` package

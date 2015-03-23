@@ -12,11 +12,13 @@
 //   type Event struct {
 //   	Name    string
 //   	Payload interface{}
+//   	Args    map[string]string
 //   }
 //
 // The Name field denotes underlying type for the Payload. Full mapping between
 // possible Name values and Payload types is listed in the documentation of
-// the webhook package.
+// the webhook package. The Args field contains all command line flags passed
+// to template script.
 //
 // Template scripts use template syntax of text/template package. Each template
 // script has registered extra control functions:
@@ -49,6 +51,31 @@
 //
 // Webhook listens on 0.0.0.0:8080 by default.
 //
+// Template scripts input
+//
+// Template scripts support currently two of ways accepting input:
+//
+//   - via {{env "VARIABLE"}} function
+//   - and via command lines arguments
+//
+// Positional arguments that follow double-dash argument are turned into map[string]string
+// value, which is then passed as Args field of an Event.
+//
+// Example
+//
+// The command line arguments passed after -- for the following command line
+//
+//   $ webhook -secret secret123 examples/slack.tsc -- -token token123 -channel CH123
+//
+// are passed to the script as
+//
+//   ...
+//   Args: map[string]string{
+//   	"Token":   "token123",
+//   	"Channel": "CH123",
+//   },
+//   ...
+//
 // The -cert and -key flags are used to provide paths for the certificate and private
 // key files. When specified, webhook serves HTTPS connections by default on 0.0.0.0:8443.
 //
@@ -60,27 +87,26 @@
 // The -log flag redirects output to the given file.
 //
 // The -dump flag makes webhook dump each received JSON payload into specified
-// directory. The file is named after <event>-<X-GitHub-Delivery>.json.
+// directory. The file is named after <event>-<delivery>.json, where:
+//
+//   - <event> is a value of X-GitHub-Event header
+//   - <delivery> is a value of X-GitHub-Delivery header
 //
 // The script argument is a path to the template script file which is used as a handler
 // for incoming events.
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"text/template"
 
+	"github.com/rjeczalik/gh/cmd/internal/tsc"
 	"github.com/rjeczalik/gh/webhook"
 )
 
@@ -95,11 +121,13 @@ The struct being passed to the template script is:
 	type Event struct {
 		Name    string
 		Payload interface{}
+		Args    map[string]string
 	}
 
 The Name field denotes underlying type for the Payload. Full mapping between
 possible Name values and Payload types is listed in the documentation of
-the webhook package.
+the webhook package. The Args field contains all command line flags passed
+to template script.
 
 Template scripts use template syntax of text/template package. Each template
 script has registered extra control functions:
@@ -132,6 +160,31 @@ And start the webhook:
 
 Webhook listens on 0.0.0.0:8080 by default.
 
+Template scripts input
+
+Template scripts support currently two of ways accepting input:
+
+	- via {{env "VARIABLE"}} function
+	- and via command lines arguments
+
+Positional arguments that follow double-dash argument are turned into map[string]string
+value, which is then passed as Args field of an Event.
+
+Example
+
+The command line arguments passed after -- for the following command line
+
+	$ webhook -secret secret123 examples/slack.tsc -- -token token123 -channel CH123
+
+are passed to the script as
+
+	...
+	Args: map[string]string{
+		"Token":   "token123",
+		"Channel": "CH123",
+	},
+	...
+
 The -cert and -key flags are used to provide paths for certificate and private
 key files. When specified, webhook serves HTTPS connection by default on 0.0.0.0:8443.
 
@@ -143,7 +196,10 @@ The value is required and cannot be empty.
 The -log flag redirects output to the given file.
 
 The -dump flag makes webhook dump each received JSON payload into specified
-directory. The file is named after <event>-<X-GitHub-Delivery>.json.
+directory. The file is named after <event>-<delivery>.json, where:
+
+	- <event> is a value of X-GitHub-Event header
+	- <delivery> is a value of X-GitHub-Delivery header
 
 The script argument is a path to the template script file which is used as a handler
 for incoming events.`
@@ -157,61 +213,6 @@ var (
 	dump    = flag.String("dump", "", "Dumps verified payloads into given directory.")
 	logfile = flag.String("log", "", "Redirects output to the given file.")
 )
-
-type Event struct {
-	Name    string      // https://developer.github.com/webhooks/#events
-	Payload interface{} // https://developer.github.com/v3/activity/events/types/
-}
-
-var scriptFuncs = template.FuncMap{
-	"env": func(s string) string {
-		return os.Getenv(s)
-	},
-	"exec": func(cmd string, args ...string) (string, error) {
-		out, err := exec.Command(cmd, args...).Output()
-		if *debug {
-			log.Printf("[DEBUG] exec cmd=%s args=%q err=%v", cmd, args, err)
-		}
-		return string(bytes.TrimSpace(out)), err
-	},
-	"log": func(v ...interface{}) string {
-		if len(v) != 0 {
-			log.Println(v...)
-		}
-		return ""
-	},
-	"logf": func(format string, v ...interface{}) string {
-		if format == "" {
-			return ""
-		}
-		if len(v) == 0 {
-			log.Printf("%s", format)
-		} else {
-			log.Printf(format, v...)
-		}
-		return ""
-	},
-}
-
-type templater struct {
-	tmpl *template.Template
-}
-
-func newTemplater(file string) (templater, error) {
-	tmpl := template.New(filepath.Base(file)).Funcs(scriptFuncs)
-	tmpl, err := tmpl.ParseFiles(flag.Arg(0))
-	if err != nil {
-		return templater{}, err
-	}
-	return templater{tmpl: tmpl}, nil
-}
-
-func (h templater) All(event string, payload interface{}) {
-	if err := h.tmpl.Execute(ioutil.Discard, Event{Name: event, Payload: payload}); err != nil {
-		log.Println("ERROR template error:", err)
-		return
-	}
-}
 
 func nonil(s ...string) string {
 	for _, s := range s {
@@ -252,7 +253,15 @@ func main() {
 		log.SetOutput(f)
 		defer f.Close()
 	}
-	tmpl, err := newTemplater(flag.Arg(0))
+	var arg string
+	var args = os.Args
+	for len(args) != 0 {
+		arg, args = args[0], args[1:]
+		if arg == "--" {
+			break
+		}
+	}
+	sc, err := tsc.New(flag.Arg(0), args)
 	if err != nil {
 		die(err)
 	}
@@ -295,7 +304,7 @@ func main() {
 		}
 		listener = l
 	}
-	var handler http.Handler = webhook.New(*secret, tmpl)
+	var handler http.Handler = webhook.New(*secret, sc)
 	if *dump != "" {
 		handler = webhook.Dump(*dump, handler)
 	}

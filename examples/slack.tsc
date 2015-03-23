@@ -1,7 +1,7 @@
 {{with $e := .}}
   {{if eq $e.Name "push"}}
     {{with $text := (urlquery (printf "%s pushed to %s" $e.Payload.Pusher.Email $e.Payload.Repository.Name))}}
-    {{with $url := (printf "https://slack.com/api/chat.postMessage?token=%s&channel=%s&text=%s" (env "SLACK_TOKEN") (env "SLACK_CHANNEL") $text)}}
+    {{with $url := (printf "https://slack.com/api/chat.postMessage?token=%s&channel=%s&text=%s" $e.Args.Token $e.Args.Channel $text)}}
       {{exec "curl" "-X" "GET" $url}}
     {{end}}
     {{end}}

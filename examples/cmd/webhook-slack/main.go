@@ -1,5 +1,5 @@
-// +build ignore
-
+// Command webhook-slack starts GitHub Webhook server and forwards all
+// push notifications to specified hipchat room.
 package main
 
 import (
@@ -13,6 +13,7 @@ import (
 )
 
 var (
+	addr    = flag.String("http", ":8080", "Network address to listen on.")
 	secret  = flag.String("secret", "", "GitHub webhook secret")
 	token   = flag.String("token", "", "Slack API token")
 	channel = flag.String("channel", "", "Slack channel name")
@@ -30,5 +31,5 @@ func (s slack) Push(e *webhook.PushEvent) {
 
 func main() {
 	flag.Parse()
-	log.Fatal(http.ListenAndServe(":8080", webhook.New(*secret, slack{})))
+	log.Fatal(http.ListenAndServe(*addr, webhook.New(*secret, slack{})))
 }
