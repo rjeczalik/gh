@@ -1,5 +1,5 @@
 // Command webhook-slack starts GitHub Webhook server and forwards all
-// push notifications to specified hipchat room.
+// push notifications to the specified Slack channel.
 package main
 
 import (

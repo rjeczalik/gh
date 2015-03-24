@@ -1,5 +1,5 @@
 // Command webhook-hipchat starts GitHub Webhook server and forwards all
-// push notifications to specified hipchat room.
+// push notifications to the specified HipChat room.
 package main
 
 import (
