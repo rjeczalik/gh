@@ -784,7 +784,7 @@ type PullRequest struct {
 	MergeableState    string `json:"mergeable_state"`
 	Merged            bool   `json:"merged"`
 	MergedAt          Time   `json:"merged_at"`
-	MergedBy          string `json:"merged_by"`
+	MergedBy          User   `json:"merged_by"`
 	Milestone         string `json:"milestone"`
 	Number            int    `json:"number"`
 	PatchURL          string `json:"patch_url"`
