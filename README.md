@@ -15,7 +15,7 @@ Package webhook implements middleware for GitHub Webhooks. User provides webhook
 
 *Documentation*
 
-[https://godoc.org/github.com/rjeczalik/gh/webhook](https://https://godoc.org/github.com/rjeczalik/gh/webhook)
+[https://godoc.org/github.com/rjeczalik/gh/webhook](https://godoc.org/github.com/rjeczalik/gh/webhook)
 
 *Examples*
 
