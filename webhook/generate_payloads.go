@@ -91,6 +91,10 @@ func (ms *memberSet) Add(m member) {
 				(*ms)[i].Typ = "Time"
 				break
 			}
+			if m.Name == "Assignee" {
+				(*ms)[i].Typ = "User"
+				break
+			}
 			(*ms)[i].Typ = "interface{}"
 			fmt.Fprintf(os.Stderr, "different types for %s member: %s and %s, using interface{}\n", m.Name, typ, m.Typ)
 		}
@@ -234,6 +238,7 @@ var tmplTypes = template.Must(template.New("payloads").Parse(types))
 // information. Instead the value types are mapped here by hand.
 var hardcodedTypes = map[string]string{
 	"user":             "User",
+	"assignee":         "User",
 	"position":         "int",
 	"code":             "int",
 	"line":             "int",
@@ -244,7 +249,6 @@ var hardcodedTypes = map[string]string{
 	"homepage":         "string",
 	"language":         "string",
 	"mirror_url":       "string",
-	"assignee":         "string",
 	"milestone":        "string",
 	"message":          "string",
 	"mergeable":        "bool",
