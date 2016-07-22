@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strings"
 
@@ -162,8 +164,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		h.fatal(w, req, http.StatusBadRequest, err)
 		return
 	}
+	reqCopy := copyRequest(req)
+	reqCopy.Body = ioutil.NopCloser(bytes.NewReader(body.Bytes()))
+	reqCopy.ContentLength = int64(body.Len())
 	w.WriteHeader(http.StatusOK)
-	go h.call(req.RemoteAddr, event, v.Interface(), req)
+	go h.call(req.RemoteAddr, event, v.Interface(), reqCopy)
 }
 
 func (h *Handler) call(remote, event string, payload interface{}, req *http.Request) {
@@ -207,4 +212,20 @@ func (h *Handler) logf(format string, args ...interface{}) {
 	} else {
 		log.Printf(format, args...)
 	}
+}
+
+// copyRequest was stolen from:
+//
+//   https://github.com/golang/gddo/blob/b828973/httputil/transport.go#L124-L134
+//
+func copyRequest(req *http.Request) *http.Request {
+	req2 := new(http.Request)
+	*req2 = *req
+	req2.URL = new(url.URL)
+	*req2.URL = *req.URL
+	req2.Header = make(http.Header, len(req.Header))
+	for k, s := range req.Header {
+		req2.Header[k] = append([]string(nil), s...)
+	}
+	return req2
 }
