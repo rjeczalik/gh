@@ -33,6 +33,55 @@ var (
 var empty = reflect.TypeOf(func(interface{}) {}).In(0)
 var contextType = reflect.TypeOf((*context.Context)(nil)).Elem()
 
+type contextKey struct {
+	name string
+}
+
+func (k *contextKey) String() string {
+	return "github.com/rjeczalik/gh/webhook context value " + k.name
+}
+
+type recWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *recWriter) Underlying() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+func (w *recWriter) Write(p []byte) (int, error) {
+	w.status = defaultStatus(w.status)
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *recWriter) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+		w.ResponseWriter.WriteHeader(status)
+	}
+}
+
+func (w *recWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+		return
+	}
+	panic("http.ResponseWriter does not implement http.Flusher")
+}
+
+var (
+	// RequestKey is a context key. It can be used in webhook handlers
+	// to access a copy of the *http.Request which is safe to modify
+	// and read.
+	RequestKey = &contextKey{"request"}
+
+	// ResponseWriterKey is a context key. It can be used in webhook
+	// handlers to access the original http.ResponseWriter to write
+	// the response directly to client.
+	ResponseWriterKey = &contextKey{"response-writer"}
+)
+
 // payloadMethods loosly bases around suitableMethods from $GOROOT/src/net/rpc/server.go.
 func payloadMethods(typ reflect.Type) map[string]reflect.Method {
 	methods := make(map[string]reflect.Method)
@@ -101,6 +150,7 @@ type Handler struct {
 	// ErrorLog specifies an optional logger for errors serving requests.
 	// If nil, logging goes to os.Stderr via the log package's standard logger.
 	ErrorLog *log.Logger
+
 	// ContextFunc generates context with given http.Request
 	// If nil, event handlers creates empty context objects
 	ContextFunc func(*http.Request) context.Context
@@ -167,36 +217,52 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	reqCopy := copyRequest(req)
 	reqCopy.Body = ioutil.NopCloser(bytes.NewReader(body.Bytes()))
 	reqCopy.ContentLength = int64(body.Len())
-	w.WriteHeader(http.StatusOK)
-	go h.call(req.RemoteAddr, event, v.Interface(), reqCopy)
+	go h.handle(event, v.Interface(), w, reqCopy)
 }
 
-func (h *Handler) call(remote, event string, payload interface{}, req *http.Request) {
+func (h *Handler) handle(event string, payload interface{}, w http.ResponseWriter, req *http.Request) {
 	if method, ok := h.method[event]; ok {
-		mtype := method.Type
-		switch mtype.NumIn() {
-		case 2: // without context
-			method.Func.Call([]reflect.Value{h.rcvr, reflect.ValueOf(payload)})
-		case 3: // with context
-			var ctx context.Context
-			if h.ContextFunc != nil {
-				ctx = h.ContextFunc(req)
-			} else {
-				ctx = context.Background()
-			}
-			method.Func.Call([]reflect.Value{h.rcvr, reflect.ValueOf(ctx), reflect.ValueOf(payload)})
+		status := h.call(method, event, payload, w, req)
+		if status == 0 {
+			w.WriteHeader(http.StatusNoContent)
 		}
-
-		h.logf("INFO %s: Status=200 X-GitHub-Event=%q Type=%T", remote, event, payload)
+		h.logf("INFO %s: Status=%d X-GitHub-Event=%q Type=%T", req.RemoteAddr, defaultStatus(status), event, payload)
 		return
 	}
 	if all, ok := h.method["*"]; ok {
 		all.Func.Call([]reflect.Value{h.rcvr, reflect.ValueOf(event), reflect.ValueOf(payload)})
-		h.logf("INFO %s: Status=200 X-GitHub-Event=%q Type=%T", remote, event, payload)
+		w.WriteHeader(http.StatusNoContent)
+		h.logf("INFO %s: Status=204 X-GitHub-Event=%q Type=%T", req.RemoteAddr, event, payload)
 		return
 	}
 	if event == "ping" {
-		h.logf("INFO %s: Status=200 X-GitHub-Event=ping Events=%v", remote, payload.(*PingEvent).Hook.Events)
+		w.WriteHeader(http.StatusNoContent)
+		h.logf("INFO %s: Status=204 X-GitHub-Event=ping Events=%v", req.RemoteAddr, payload.(*PingEvent).Hook.Events)
+	}
+}
+
+func (h *Handler) call(method reflect.Method, event string, payload interface{}, w http.ResponseWriter, req *http.Request) int {
+	switch method.Type.NumIn() {
+	case 2: // without context
+		method.Func.Call([]reflect.Value{h.rcvr, reflect.ValueOf(payload)})
+		return 0
+	case 3: // with context
+		var ctx context.Context
+		var ww = &recWriter{ResponseWriter: w}
+		if h.ContextFunc != nil {
+			ctx = h.ContextFunc(req)
+		} else {
+			ctx = context.Background()
+		}
+
+		w = ww
+
+		ctx = context.WithValue(ctx, RequestKey, req)
+		ctx = context.WithValue(ctx, ResponseWriterKey, w)
+		method.Func.Call([]reflect.Value{h.rcvr, reflect.ValueOf(ctx), reflect.ValueOf(payload)})
+		return ww.status
+	default:
+		return http.StatusInternalServerError
 	}
 }
 
@@ -228,4 +294,11 @@ func copyRequest(req *http.Request) *http.Request {
 		req2.Header[k] = append([]string(nil), s...)
 	}
 	return req2
+}
+
+func defaultStatus(status int) int {
+	if status != 0 {
+		return status
+	}
+	return 200
 }
