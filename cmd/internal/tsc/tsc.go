@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"text/template"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -85,6 +86,14 @@ func (s *Script) funcs() template.FuncMap {
 		"exec": func(cmd string, args ...string) (string, error) {
 			out, err := exec.Command(cmd, args...).Output()
 			return string(bytes.TrimSpace(out)), err
+		},
+		"sleep": func(s string) (string, error) {
+			d, err := time.ParseDuration(s)
+			if err != nil {
+				return "", err
+			}
+			time.Sleep(d)
+			return "", nil
 		},
 		"log": func(v ...interface{}) string {
 			if len(v) != 0 {
