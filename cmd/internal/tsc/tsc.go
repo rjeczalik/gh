@@ -3,12 +3,14 @@ package tsc
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"text/template"
 	"time"
 	"unicode"
@@ -37,6 +39,7 @@ type Script struct {
 
 	OutputFunc func() io.Writer
 
+	bash bool
 	tmpl *template.Template
 	args map[string]string
 }
@@ -45,9 +48,9 @@ func New(file string, args []string) (*Script, error) {
 	if len(args)&1 == 1 {
 		return nil, errors.New("number of arguments for template script must be even")
 	}
-	sc := &Script{}
+	s := &Script{}
 	if len(args) != 0 {
-		sc.args = make(map[string]string)
+		s.args = make(map[string]string, len(args)/2)
 		for i := 0; i < len(args); i += 2 {
 			if len(args[i]) < 2 || args[i][0] != '-' {
 				return nil, errors.New("invalid flag name: " + args[i])
@@ -56,26 +59,69 @@ func New(file string, args []string) (*Script, error) {
 			if r == utf8.RuneError {
 				return nil, errors.New("invalid flag name: " + args[i])
 			}
-			sc.args[string(unicode.ToUpper(r))+args[i][1+n:]] = args[i+1]
+			s.args[string(unicode.ToUpper(r))+args[i][1+n:]] = args[i+1]
 		}
 	}
-	tmpl, err := template.New(filepath.Base(file)).Funcs(sc.funcs()).ParseFiles(file)
+	s.bash = strings.HasSuffix(file, ".sh") || strings.HasSuffix(file, ".bash")
+	var err error
+	s.tmpl, err = template.New(filepath.Base(file)).Funcs(s.funcs()).ParseFiles(file)
 	if err != nil {
 		return nil, err
 	}
-	sc.tmpl = tmpl
-	return sc, nil
+	return s, nil
 }
 
 func (s *Script) Webhook(event string, payload interface{}) {
-	w := s.output()
-	err := s.tmpl.Execute(w, Event{Name: event, Payload: payload, Args: s.args})
-	if c, ok := w.(io.Closer); ok {
-		err = nonil(err, c.Close())
+	e := &Event{
+		Name:    event,
+		Payload: payload,
+		Args:    s.args,
+	}
+	var err error
+	if s.bash {
+		err = s.runBash(e)
+	} else {
+		err = s.execute(s.output(), e)
 	}
 	if err != nil {
 		s.logf("ERROR template script error: %v", err)
 	}
+}
+
+func (s *Script) runBash(e *Event) (err error) {
+	var buf bytes.Buffer
+	if err = s.execute(&buf, e); err != nil {
+		return err
+	}
+
+	cmd := exec.Command("bash")
+	cmd.Stdin = bytes.NewReader(buf.Bytes())
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stderr
+	cmd.Env = append(os.Environ(), "WEBHOOK=1") // cache?
+
+	if err = cmd.Run(); err != nil {
+		// dump script for later troubleshooting
+		f, e := ioutil.TempFile("webhook", "debug")
+		if e == nil {
+			_, e = io.Copy(f, bytes.NewReader(buf.Bytes()))
+			e = nonil(e, f.Close())
+		}
+		if e != nil {
+			return fmt.Errorf("%s (failed to dump script file: %s)", err, e)
+		}
+		return fmt.Errorf("%s: failed with: %s", f.Name(), err)
+	}
+
+	return nil
+}
+
+func (s *Script) execute(w io.Writer, e *Event) error {
+	err := s.tmpl.Execute(w, e)
+	if c, ok := w.(io.Closer); ok {
+		err = nonil(err, c.Close())
+	}
+	return err
 }
 
 func (s *Script) funcs() template.FuncMap {
