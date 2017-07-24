@@ -98,12 +98,15 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/rjeczalik/gh/cmd/internal/tsc"
 	"github.com/rjeczalik/gh/webhook"
@@ -203,15 +206,29 @@ directory. The file is named after <event>-<delivery>.json, where:
 The script argument is a path to the template script file which is used as a handler
 for incoming events.`
 
-var (
-	cert    = flag.String("cert", "", "Certificate file.")
-	key     = flag.String("key", "", "Private key file.")
-	addr    = flag.String("addr", "", "Network address to listen on. Default is :8080 for HTTP and :8443 for HTTPS.")
-	secret  = flag.String("secret", "", "GitHub secret value used for signing payloads.")
-	debug   = flag.Bool("debug", false, "Dumps verified payloads into testdata directory.")
-	dump    = flag.String("dump", "", "Dumps verified payloads into given directory.")
-	logfile = flag.String("log", "", "Redirects output to the given file.")
-)
+var config struct {
+	Cert       string   `json:"cert"`
+	Key        string   `json:"key"`
+	Addr       string   `json:"addr"`
+	Secret     string   `json:"secret"`
+	Debug      bool     `json:"debug"`
+	Dump       string   `json:"dump"`
+	Log        string   `json:"log"`
+	Script     string   `json:"script"`
+	ScriptArgs []string `json:"scriptArgs"`
+}
+
+var configFile = flag.String("config", "", "Configuration file to use.")
+
+func init() {
+	flag.StringVar(&config.Cert, "cert", "", "Certificate file.")
+	flag.StringVar(&config.Key, "key", "", "Private key file.")
+	flag.StringVar(&config.Addr, "addr", "", "Network address to listen on. Default is :8080 for HTTP and :8443 for HTTPS.")
+	flag.StringVar(&config.Secret, "secret", "", "GitHub secret value used for signing payloads.")
+	flag.BoolVar(&config.Debug, "debug", false, "Dumps verified payloads into testdata directory.")
+	flag.StringVar(&config.Dump, "dump", "", "Dumps verified payloads into given directory.")
+	flag.StringVar(&config.Log, "log", "", "Redirects output to the given file.")
+}
 
 func nonil(s ...string) string {
 	for _, s := range s {
@@ -235,59 +252,79 @@ func main() {
 		fmt.Fprintln(os.Stderr, usage)
 	}
 	flag.Parse()
-	if flag.NArg() == 0 || flag.Arg(0) == "" {
+	if flag.NArg() > 0 {
+		config.Script = flag.Arg(0)
+	}
+	if *configFile != "" {
+		p, err := ioutil.ReadFile(*configFile)
+		if os.IsNotExist(err) {
+			if p, err = json.Marshal(&config); err != nil {
+				die(err)
+			}
+			if err = os.MkdirAll(filepath.Dir(*configFile), 0700); err != nil {
+				die(err)
+			}
+			if err = ioutil.WriteFile(*configFile, p, 0600); err != nil {
+				die(err)
+			}
+		}
+		if err = json.Unmarshal(p, &config); err != nil {
+			die(err)
+		}
+	}
+	if config.Script == "" {
 		die("missing script file")
 	}
-	if (*cert == "") != (*key == "") {
+	if (config.Cert == "") != (config.Key == "") {
 		die("both -cert and -key flags must be provided")
 	}
-	if *debug && *dump == "" {
-		*dump = "testdata"
+	if config.Debug && config.Dump == "" {
+		config.Dump = "testdata"
 	}
-	if *logfile != "" {
-		f, err := os.OpenFile(*logfile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	var arg string
+	config.ScriptArgs = os.Args
+	for len(config.ScriptArgs) != 0 {
+		arg, config.ScriptArgs = config.ScriptArgs[0], config.ScriptArgs[1:]
+		if arg == "--" {
+			break
+		}
+	}
+	if config.Log != "" {
+		f, err := os.OpenFile(config.Log, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			die(err)
 		}
 		log.SetOutput(f)
 		defer f.Close()
 	}
-	var arg string
-	var args = os.Args
-	for len(args) != 0 {
-		arg, args = args[0], args[1:]
-		if arg == "--" {
-			break
-		}
-	}
-	sc, err := tsc.New(flag.Arg(0), args)
+	sc, err := tsc.New(config.Script, config.ScriptArgs)
 	if err != nil {
 		die(err)
 	}
 	var listener net.Listener
-	if *cert != "" {
-		crt, err := tls.LoadX509KeyPair(*cert, *key)
+	if config.Cert != "" {
+		crt, err := tls.LoadX509KeyPair(config.Cert, config.Key)
 		if err != nil {
 			die(err)
 		}
 		cfg := &tls.Config{
 			Certificates: []tls.Certificate{crt},
 		}
-		l, err := tls.Listen("tcp", nonil(*addr, "0.0.0.0:8443"))
+		l, err := tls.Listen("tcp", nonil(config.Addr, "0.0.0.0:8443"), cfg)
 		if err != nil {
 			die(err)
 		}
 		listener = l
 	} else {
-		l, err := net.Listen("tcp", nonil(*addr, "0.0.0.0:8080"))
+		l, err := net.Listen("tcp", nonil(config.Addr, "0.0.0.0:8080"))
 		if err != nil {
 			die(err)
 		}
 		listener = l
 	}
-	var handler http.Handler = webhook.New(*secret, sc)
-	if *dump != "" {
-		handler = webhook.Dump(*dump, handler)
+	var handler http.Handler = webhook.New(config.Secret, sc)
+	if config.Dump != "" {
+		handler = webhook.Dump(config.Dump, handler)
 	}
 	log.Printf("INFO Listening on %s . . .", listener.Addr())
 	if err := http.Serve(listener, handler); err != nil {
