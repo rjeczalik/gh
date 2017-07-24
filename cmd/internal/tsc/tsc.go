@@ -2,6 +2,7 @@ package tsc
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -146,6 +147,16 @@ func (s *Script) funcs() template.FuncMap {
 				s.log(v...)
 			}
 			return ""
+		},
+		"json": func(v interface{}) (string, error) {
+			var buf bytes.Buffer
+			enc := json.NewEncoder(&buf)
+			enc.SetIndent("", "\t")
+			enc.SetEscapeHTML(false)
+			if err := enc.Encode(v); err != nil {
+				return "", err
+			}
+			return buf.String(), nil
 		},
 		"logf": func(format string, v ...interface{}) string {
 			if format == "" {
