@@ -1,0 +1,14 @@
+{with $e := .}}
+  {{if eq $e.Name "pull_request"}}
+    {{if eq $e.Payload.Sender.Login "szkl"}}
+      {{if eq $e.Payload.Assignee.Login "rjeczalik"}}
+        {{with $auth := (printf "Authorization: Bearer %s" $e.Args.Token)}}
+        {{with $url := (printf "https://api.github.com/repos/koding/koding/pulls/%s/merge" $e.Payload.Number)}}
+          {{sleep "120m"}}
+          {{exec "curl" "-H" "Accept: application/vnd.github.v3+json" "-H" $auth "-x" "PUT" $url | log}}
+        {{end}}
+        {{end}}
+      {{end}}
+    {{end}}
+  {{end}}
+{{end}}
