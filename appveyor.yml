@@ -11,7 +11,6 @@ environment:
 install:
  - cd %APPVEYOR_BUILD_FOLDER%
  - go version
- - go get golang.org/x/tools/cmd/vet
  - go get -v -t ./...
  - go get -v github.com/PuerkitoBio/goquery
  - go generate -v ./...
