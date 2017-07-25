@@ -103,7 +103,7 @@ func (s *Script) runBash(e *Event) (err error) {
 
 	if err = cmd.Run(); err != nil {
 		// dump script for later troubleshooting
-		f, e := ioutil.TempFile("webhook", "debug")
+		f, e := ioutil.TempFile("", "webhook")
 		if e == nil {
 			_, e = io.Copy(f, bytes.NewReader(buf.Bytes()))
 			e = nonil(e, f.Close())
